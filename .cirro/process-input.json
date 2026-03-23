@@ -1,0 +1,16 @@
+{
+    "read_from_cache": true,
+    "write_to_cache": true,
+    "outdir": "$.params.dataset.s3|/data/",
+    "ref_dict": "s3://broad-references/hg38/v0/Homo_sapiens_assembly38.dict",
+    "ref_fai": "s3://broad-references/hg38/v0/Homo_sapiens_assembly38.fasta.fai",
+    "ref_fasta": "s3://broad-references/hg38/v0/Homo_sapiens_assembly38.fasta",
+    "cpu": "$.dataset.params.cpu",
+    "mem": "$.dataset.params.mem",
+    "gatk_docker": "broadinstitute/gatk:4.0.11.0",
+    
+    "gnomad_version": "2.1",
+    "mem_gb": "16",
+    "disk_space_gb": "30",
+    "boot_disk_size_gb": "30"
+}

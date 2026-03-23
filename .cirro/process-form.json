@@ -1,0 +1,32 @@
+{
+  "form": {
+    "title": "Consensus",
+    "type": "object",
+    "properties": {
+      "gatk_docker": {
+        "title": "gatk docker",
+        "description": " Docker image to use for Mutect2 tasks. This is only used for backends configured to use docker.",
+        "type": "string",
+        "default":"broadinstitute/gatk:4.2.4.0"
+      },
+      
+      "cpu": {
+        "title": "cpu",
+        "description": "amount of cpu you're running on",
+        "type": "integer"
+      },
+      "mem": {
+        "title": "mem",
+        "description": "amount of memory you're running on",
+        "type": "integer",
+        "default":8
+      }
+    },
+    "required": [
+        "gatk_docker",
+        "scatter_count"
+
+    ]
+  },
+  "ui": {}
+}
