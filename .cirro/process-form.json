@@ -9,7 +9,6 @@
         "type": "string",
         "default":"broadinstitute/gatk:4.2.4.0"
       },
-      
       "cpu": {
         "title": "cpu",
         "description": "amount of cpu you're running on",
@@ -20,6 +19,22 @@
         "description": "amount of memory you're running on",
         "type": "integer",
         "default":8
+      },
+      "vcf_1": {
+        "title": "vcf_1",
+        "description": "vcf for consensus",
+        "type": "string",
+        "multiple": false,
+        "pathType": "dataset",
+        "file": "**/*"
+      },
+      "vcf_2": {
+        "title": "vcf_2",
+        "description": "vcf for consensus",
+        "type": "string",
+        "multiple": false,
+        "pathType": "dataset",
+        "file": "**/*"
       }
     },
     "required": [

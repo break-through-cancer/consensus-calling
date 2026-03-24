@@ -8,7 +8,8 @@
     "cpu": "$.dataset.params.cpu",
     "mem": "$.dataset.params.mem",
     "gatk_docker": "broadinstitute/gatk:4.0.11.0",
-    
+    "vcf1": "$.dataset.params.vcf_1",
+    "vcf2": "$.dataset.params.vcf_2",
     "gnomad_version": "2.1",
     "mem_gb": "16",
     "disk_space_gb": "30",

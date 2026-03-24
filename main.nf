@@ -46,20 +46,18 @@ process consensus_bcftools {
 
 workflow {
 
-  def n = params.n_callers as int
-
-  if (n < 2) {
-    error "n_callers must be >= 2 for consensus calling, got ${n}"
+  // Require explicit inputs
+  if( !params.vcf1 || !params.vcf2 ) {
+    error "You must provide --vcf1 and --vcf2"
   }
 
-  vcf_ch = Channel.fromList(
-    (0..<n).collect { i ->
-      file(params["caller_vcf_${i}"], checkIfExists: true)
-    }
+  vcf_ch = Channel.of(
+    file(params.vcf1, checkIfExists: true),
+    file(params.vcf2, checkIfExists: true)
   ).collect()
 
   consensus_bcftools(
     vcf_ch,
-    params.snv_min_callers as int   // n-1, computed in preprocess
+    params.snv_min_callers ?: 1   // default to 1 (since 2 callers → n-1 = 1)
   )
 }
