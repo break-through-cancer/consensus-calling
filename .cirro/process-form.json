@@ -38,8 +38,7 @@
       }
     },
     "required": [
-        "gatk_docker",
-        "scatter_count"
+        "gatk_docker"
 
     ]
   },
