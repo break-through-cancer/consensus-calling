@@ -35,6 +35,14 @@
         "multiple": false,
         "pathType": "dataset",
         "file": "**/*"
+      },
+      "vcf_3": {
+        "title": "vcf_3",
+        "description": "vcf for consensus",
+        "type": "string",
+        "multiple": false,
+        "pathType": "dataset",
+        "file": "**/*"
       }
     },
     "required": [
