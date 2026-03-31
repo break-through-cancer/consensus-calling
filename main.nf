@@ -1,6 +1,6 @@
 process consensus_bcftools {
   label 'process_medium'
-  container 'quay.io/biocontainers/bcftools:1.18--h8b25389_0'
+  container 'quay.io/biocontainers/bcftools:1.21--h8b25389_0'
 
   input:
     path vcfs
@@ -53,6 +53,17 @@ process consensus_bcftools {
 
   echo "=== Finished normalization ==="
   ls -lh norm_*.vcf.gz
+
+  # After normalization, before merge — strip FORMAT to GT only
+  for caller in vcf1 vcf2 vcf3; do
+    bcftools annotate \
+      -x FORMAT \
+      norm_\${caller}.vcf.gz \
+      -O z -o stripped_\${caller}.vcf.gz
+    bcftools index -t stripped_\${caller}.vcf.gz
+  done
+
+  ls stripped_*.vcf.gz > norm.list
 
   # ── Step 2: merge callers into one multi-sample VCF ───────────────
   ls norm_*.vcf.gz > norm.list
