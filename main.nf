@@ -66,8 +66,6 @@ process consensus_bcftools {
   ls stripped_*.vcf.gz > norm.list
 
   # ── Step 2: merge callers into one multi-sample VCF ───────────────
-  ls norm_*.vcf.gz > norm.list
-
   echo "=== Merging normalized VCFs ==="
   cat norm.list
 
