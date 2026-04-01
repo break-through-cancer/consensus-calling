@@ -29,8 +29,10 @@ def main():
     ds = PreprocessDataset.from_running()
 
     print("=== ds.files preview ===")
-    print(ds.files.head(20).to_string(index=False))
-
+    print(ds.files.to_string(index=False))
+    print(f"\n=== shape: {ds.files.shape} ===")
+    print(f"\n=== unique samples: {ds.files['sample'].unique().tolist()} ===")
+    print(f"\n=== unique datasets: {ds.files['dataset'].unique().tolist()} ===")
     # vcf_pairs = extract_vcfs(ds)
     # n_callers = len(vcf_pairs)
 

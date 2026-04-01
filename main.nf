@@ -144,18 +144,18 @@ process consensus_bcftools {
 }
 workflow {
 
-  if( !params.vcf1 || !params.vcf2 || !params.vcf3 ) {
-    error "You must provide --vcf1, --vcf2, and --vcf3"
-  }
+  // if( !params.vcf1 || !params.vcf2 || !params.vcf3 ) {
+  //   error "You must provide --vcf1, --vcf2, and --vcf3"
+  // }
 
-  vcf_ch = Channel.of(
-    file(params.vcf1, checkIfExists: true),
-    file(params.vcf2, checkIfExists: true),
-    file(params.vcf3, checkIfExists: true)
-  ).collect()
+  // vcf_ch = Channel.of(
+  //   file(params.vcf1, checkIfExists: true),
+  //   file(params.vcf2, checkIfExists: true),
+  //   file(params.vcf3, checkIfExists: true)
+  // ).collect()
 
-  consensus_bcftools(
-    vcf_ch,
-    params.snv_min_callers ?: 2   // default: 2-of-3 support
-  )
+  // consensus_bcftools(
+  //   vcf_ch,
+  //   params.snv_min_callers ?: 2   // default: 2-of-3 support
+  // )
 }
