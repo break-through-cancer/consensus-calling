@@ -1,5 +1,7 @@
 import json
-from cirro.sdk import PreprocessDataset  # adjust to your actual import
+import pandas as pd
+from cirro.helpers.preprocess_dataset import PreprocessDataset
+
 
 def extract_vcfs(ds):
     df = ds.files.copy()
