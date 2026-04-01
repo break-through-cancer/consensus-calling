@@ -22,10 +22,6 @@ def extract_vcfs(ds):
 
     return pairs
 
-def built_manifest():
-    
-
-
 
 def main():
     ds = PreprocessDataset.from_running()
@@ -33,32 +29,32 @@ def main():
     print("=== ds.files preview ===")
     print(ds.files.head(20).to_string(index=False))
 
-    vcf_pairs = extract_vcfs(ds)
-    n_callers = len(vcf_pairs)
+    # vcf_pairs = extract_vcfs(ds)
+    # n_callers = len(vcf_pairs)
 
-    # Fail fast — consensus is meaningless with only one caller
-    if n_callers < 2:
-        raise ValueError(
-            f"Consensus calling requires at least 2 VCFs, only {n_callers} found. "
-            "Please provide VCFs from multiple callers."
-        )
-    print(f"Found {n_callers} VCFs")
+    # # Fail fast — consensus is meaningless with only one caller
+    # if n_callers < 2:
+    #     raise ValueError(
+    #         f"Consensus calling requires at least 2 VCFs, only {n_callers} found. "
+    #         "Please provide VCFs from multiple callers."
+    #     )
+    # print(f"Found {n_callers} VCFs")
 
-    # Store each VCF/TBI with a predictable index-based name
-    for i, pair in enumerate(vcf_pairs):
-        ds.add_param(f"caller_vcf_{i}", pair["vcf"])
-        ds.add_param(f"caller_tbi_{i}", pair["tbi"])
+    # # Store each VCF/TBI with a predictable index-based name
+    # for i, pair in enumerate(vcf_pairs):
+    #     ds.add_param(f"caller_vcf_{i}", pair["vcf"])
+    #     ds.add_param(f"caller_tbi_{i}", pair["tbi"])
 
-    # Store n so Nextflow knows how many callers there are
-    ds.add_param("n_callers", n_callers)
+    # # Store n so Nextflow knows how many callers there are
+    # ds.add_param("n_callers", n_callers)
 
-    # n-1 threshold: for SNVs accept if called by at least n-1 callers
-    # for indels accept if called by both (min 2)
-    ds.add_param("snv_min_callers", max(1, n_callers - 1))
-    ds.add_param("indel_min_callers", min(2, n_callers))a
+    # # n-1 threshold: for SNVs accept if called by at least n-1 callers
+    # # for indels accept if called by both (min 2)
+    # ds.add_param("snv_min_callers", max(1, n_callers - 1))
+    # ds.add_param("indel_min_callers", min(2, n_callers))a
 
-    print("\nFinal parameters:")
-    print(json.dumps(ds.params, indent=2, default=str))
+    # print("\nFinal parameters:")
+    # print(json.dumps(ds.params, indent=2, default=str))
 
 if __name__ == "__main__":
     main()
