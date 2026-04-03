@@ -28,11 +28,12 @@ def extract_vcfs(ds):
 def main():
     ds = PreprocessDataset.from_running()
 
-    print("=== ds.files preview ===")
+    print("=== ds.files FULL ===")
     print(ds.files.to_string(index=False))
-    print(f"\n=== shape: {ds.files.shape} ===")
-    print(f"\n=== unique samples: {ds.files['sample'].unique().tolist()} ===")
-    print(f"\n=== unique datasets: {ds.files['dataset'].unique().tolist()} ===")
+    print(f"\nShape: {ds.files.shape}")
+    print(f"\nUnique datasets: {ds.files['dataset'].unique().tolist()}")
+    print(f"\nUnique samples:  {ds.files['sample'].unique().tolist()}")
+    print(f"\nUnique process:  {ds.files['process'].unique().tolist()}")
     # vcf_pairs = extract_vcfs(ds)
     # n_callers = len(vcf_pairs)
 
