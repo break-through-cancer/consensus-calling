@@ -7,14 +7,12 @@ def extract_vcfs(ds):
     df = ds.files.copy()
     df["file"] = df["file"].astype(str)
 
-    # Keep VCFs and their TBI indices
     vcf_files = df[df["file"].str.endswith(".vcf.gz")]["file"].tolist()
     tbi_files = df[df["file"].str.endswith(".vcf.gz.tbi")]["file"].tolist()
 
     if not vcf_files:
         raise ValueError("No VCF files found in dataset")
 
-    # Match VCFs to their TBIs by basename
     pairs = []
     for vcf in sorted(vcf_files):
         tbi = vcf + ".tbi"
@@ -28,38 +26,32 @@ def extract_vcfs(ds):
 def main():
     ds = PreprocessDataset.from_running()
 
-    print("=== ds.files FULL ===")
-    print(ds.files.to_string(index=False))
-    print(f"\nShape: {ds.files.shape}")
-    print(f"\nUnique datasets: {ds.files['dataset'].unique().tolist()}")
-    print(f"\nUnique samples:  {ds.files['sample'].unique().tolist()}")
-    print(f"\nUnique process:  {ds.files['process'].unique().tolist()}")
-    # vcf_pairs = extract_vcfs(ds)
-    # n_callers = len(vcf_pairs)
+    vcf_pairs = extract_vcfs(ds)
+    n_callers = len(vcf_pairs)
 
-    # # Fail fast — consensus is meaningless with only one caller
-    # if n_callers < 2:
-    #     raise ValueError(
-    #         f"Consensus calling requires at least 2 VCFs, only {n_callers} found. "
-    #         "Please provide VCFs from multiple callers."
-    #     )
-    # print(f"Found {n_callers} VCFs")
+    if n_callers < 3:
+        raise ValueError(
+            f"Consensus calling requires at least 3 VCFs, but only {n_callers} were found."
+        )
 
-    # # Store each VCF/TBI with a predictable index-based name
-    # for i, pair in enumerate(vcf_pairs):
-    #     ds.add_param(f"caller_vcf_{i}", pair["vcf"])
-    #     ds.add_param(f"caller_tbi_{i}", pair["tbi"])
+    if n_callers > 7:
+        raise ValueError(
+            f"This workflow supports at most 7 VCFs, but {n_callers} were found."
+        )
 
-    # # Store n so Nextflow knows how many callers there are
-    # ds.add_param("n_callers", n_callers)
+    print(f"Found {n_callers} VCFs")
 
-    # # n-1 threshold: for SNVs accept if called by at least n-1 callers
-    # # for indels accept if called by both (min 2)
-    # ds.add_param("snv_min_callers", max(1, n_callers - 1))
-    # ds.add_param("indel_min_callers", min(2, n_callers))a
+    for i, pair in enumerate(vcf_pairs):
+        ds.add_param(f"caller_vcf_{i}", pair["vcf"])
+        ds.add_param(f"caller_tbi_{i}", pair["tbi"])
 
-    # print("\nFinal parameters:")
-    # print(json.dumps(ds.params, indent=2, default=str))
+    ds.add_param("n_callers", n_callers)
+    ds.add_param("snv_min_callers", n_callers - 1)
+    ds.add_param("indel_min_callers", 2)
+
+    print("\nFinal parameters:")
+    print(json.dumps(ds.params, indent=2, default=str))
+
 
 if __name__ == "__main__":
     main()
