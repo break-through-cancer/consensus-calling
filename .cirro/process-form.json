@@ -79,9 +79,9 @@
     },
     "required": [
         "gatk_docker",
-        "vcf1",
-        "vcf2",
-        "vcf3"
+        "vcf_1",
+        "vcf_2",
+        "vcf_3"
 
     ]
   },
