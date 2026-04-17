@@ -2,13 +2,11 @@ process MERGE_CONSENSUS {
     tag "merge_consensus"
 
     input:
-    path snv_vcf
-    path snv_tbi
-    path indel_vcf
-    path indel_tbi
+    tuple path(snv_vcf), path(snv_tbi)
+    tuple path(indel_vcf), path(indel_tbi)
 
     output:
-    path("final_consensus.vcf.gz"), path("final_consensus.vcf.gz.tbi")
+    tuple path("final_consensus.vcf.gz"), path("final_consensus.vcf.gz.tbi")
 
     script:
     """

@@ -6,8 +6,7 @@ process CONSENSUS_INDELS {
     path tbis
 
     output:
-    path("indel_consensus.vcf.gz")
-    path("indel_consensus.vcf.gz.tbi")
+    tuple path("indel_consensus.vcf.gz"), path("indel_consensus.vcf.gz.tbi")
 
     script:
     """

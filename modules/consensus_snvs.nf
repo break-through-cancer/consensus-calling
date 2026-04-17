@@ -6,8 +6,7 @@ process CONSENSUS_SNVS {
     path tbis
 
     output:
-    path("snv_consensus.vcf.gz")
-    path("snv_consensus.vcf.gz.tbi")
+    tuple path("snv_consensus.vcf.gz"), path("snv_consensus.vcf.gz.tbi")
 
     script:
     """
