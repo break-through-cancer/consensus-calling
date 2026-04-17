@@ -1,6 +1,7 @@
 process CONSENSUS_SNVS {
     tag "snv_consensus"
-
+    container "${params.gatk_docker ?: 'broadinstitute/gatk:4.5.0.0'}"
+    
     input:
     path vcfs
     path tbis
