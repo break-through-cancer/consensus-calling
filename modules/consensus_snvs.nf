@@ -1,6 +1,6 @@
 process CONSENSUS_SNVS {
     tag "snv_consensus"
-    container "${params.gatk_docker ?: 'quay.io/biocontainers/bcftools:1.20--h8b25389_0'}"
+    container 'quay.io/biocontainers/bcftools:1.20--h8b25389_0'
     
     input:
     path vcfs
