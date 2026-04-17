@@ -2,10 +2,12 @@ process CONSENSUS_SNVS {
     tag "snv_consensus"
 
     input:
-    tuple val(caller_id), path(vcf), path(tbi)
+    path vcfs
+    path tbis
 
     output:
-    path("snv_consensus.vcf.gz"), path("snv_consensus.vcf.gz.tbi")
+    path("snv_consensus.vcf.gz")
+    path("snv_consensus.vcf.gz.tbi")
 
     script:
     """

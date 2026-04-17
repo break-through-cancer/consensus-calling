@@ -2,10 +2,12 @@ process CONSENSUS_INDELS {
     tag "indel_consensus"
 
     input:
-    tuple val(caller_id), path(vcf), path(tbi)
+    path vcfs
+    path tbis
 
     output:
-    path("indel_consensus.vcf.gz"), path("indel_consensus.vcf.gz.tbi")
+    path("indel_consensus.vcf.gz")
+    path("indel_consensus.vcf.gz.tbi")
 
     script:
     """
