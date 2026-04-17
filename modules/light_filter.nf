@@ -1,6 +1,6 @@
 process LIGHT_FILTER {
     tag "${caller_id}"
-    container "${params.gatk_docker ?: 'broadinstitute/gatk:4.5.0.0'}"
+    container "${params.gatk_docker ?: 'quay.io/biocontainers/bcftools:1.20--h8b25389_0'}"
 
     input:
     tuple val(caller_id), path(vcf), path(tbi)

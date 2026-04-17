@@ -1,6 +1,6 @@
 process MERGE_CONSENSUS {
     tag "merge_consensus"
-    container "${params.gatk_docker ?: 'broadinstitute/gatk:4.5.0.0'}"
+    container "${params.gatk_docker ?: 'quay.io/biocontainers/bcftools:1.20--h8b25389_0'}"
     input:
     tuple path(snv_vcf), path(snv_tbi)
     tuple path(indel_vcf), path(indel_tbi)
