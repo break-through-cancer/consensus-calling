@@ -43,10 +43,45 @@
         "multiple": false,
         "pathType": "dataset",
         "file": "**/*"
+      },
+      "vcf_4": {
+        "title": "vcf_4",
+        "description": "vcf for consensus",
+        "type": "string",
+        "multiple": false,
+        "pathType": "dataset",
+        "file": "**/*"
+      },
+      "vcf_5": {
+        "title": "vcf_5",
+        "description": "vcf for consensus",
+        "type": "string",
+        "multiple": false,
+        "pathType": "dataset",
+        "file": "**/*"
+      },
+      "vcf_6": {
+        "title": "vcf_6",
+        "description": "vcf for consensus",
+        "type": "string",
+        "multiple": false,
+        "pathType": "dataset",
+        "file": "**/*"
+      },
+      "vcf_7": {
+        "title": "vcf_7",
+        "description": "vcf for consensus",
+        "type": "string",
+        "multiple": false,
+        "pathType": "dataset",
+        "file": "**/*"
       }
     },
     "required": [
-        "gatk_docker"
+        "gatk_docker",
+        "vcf1",
+        "vcf2",
+        "vcf3"
 
     ]
   },

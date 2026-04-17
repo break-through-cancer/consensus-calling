@@ -8,34 +8,34 @@ include { MERGE_CONSENSUS } from './modules/merge_consensus'
 
 workflow {
 
-    // Collect provided VCFs
     vcfs = [
         params.vcf1, params.vcf2, params.vcf3,
         params.vcf4, params.vcf5, params.vcf6, params.vcf7
-    ].findAll { it != null }
+    ].findAll { it }
 
     if (vcfs.size() < 3) {
         error "Need at least 3 VCFs for consensus"
     }
 
-    // Build channel with paired TBIs
     vcf_ch = Channel
         .fromList(vcfs)
         .map { vcf ->
-            def tbi = file(vcf + ".tbi")
-            tuple(vcf.tokenize('/')[-1].replace('.vcf.gz',''), file(vcf), tbi)
+            tuple(
+                vcf.tokenize('/')[-1].replace('.vcf.gz',''),
+                file(vcf),
+                file(vcf + '.tbi')
+            )
         }
 
     filtered_ch = LIGHT_FILTER(vcf_ch)
 
     split_ch = SPLIT_SNVS_INDELS(filtered_ch)
 
-    snv_consensus = CONSENSUS_SNVS(split_ch.snvs.collect())
+    snv_consensus   = CONSENSUS_SNVS(split_ch.snvs.collect())
     indel_consensus = CONSENSUS_INDELS(split_ch.indels.collect())
 
     MERGE_CONSENSUS(snv_consensus, indel_consensus)
 }
-
 // process consensus_bcftools {
 //   label 'process_medium'
 //   container 'quay.io/biocontainers/bcftools:1.21--h8b25389_0'

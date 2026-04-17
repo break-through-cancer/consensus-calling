@@ -2,51 +2,66 @@ import json
 from cirro.helpers.preprocess_dataset import PreprocessDataset
 
 
-def extract_vcfs(ds):
-    df = ds.files.copy()
-    df["file"] = df["file"].astype(str)
+def validate_vcf(vcf_path, all_files):
+    if vcf_path not in all_files:
+        raise ValueError(f"Specified VCF not found in dataset: {vcf_path}")
 
-    vcf_files = sorted(df[df["file"].str.endswith(".vcf.gz")]["file"].tolist())
-    tbi_files = set(df[df["file"].str.endswith(".vcf.gz.tbi")]["file"].tolist())
+    if not str(vcf_path).endswith(".vcf.gz"):
+        raise ValueError(f"Specified file is not a .vcf.gz file: {vcf_path}")
 
-    if not vcf_files:
-        raise ValueError("No VCF files found in dataset")
+    tbi_path = f"{vcf_path}.tbi"
+    if tbi_path not in all_files:
+        raise ValueError(f"Missing TBI index for {vcf_path}")
 
-    pairs = []
-    for vcf in vcf_files:
-        tbi = f"{vcf}.tbi"
-        if tbi not in tbi_files:
-            raise ValueError(f"Missing TBI index for {vcf}")
-        pairs.append({"vcf": vcf, "tbi": tbi})
-
-    return pairs
+    return {"vcf": vcf_path, "tbi": tbi_path}
 
 
 def main():
     ds = PreprocessDataset.from_running()
 
-    vcf_pairs = extract_vcfs(ds)
-    n_callers = len(vcf_pairs)
+    df = ds.files.copy()
+    df["file"] = df["file"].astype(str)
+    all_files = set(df["file"].tolist())
 
-    if n_callers < 3:
+    # Read user-selected VCF params
+    user_vcfs = [
+        ds.params.get("vcf1"),
+        ds.params.get("vcf2"),
+        ds.params.get("vcf3"),
+        ds.params.get("vcf4"),
+        ds.params.get("vcf5"),
+        ds.params.get("vcf6"),
+        ds.params.get("vcf7"),
+    ]
+
+    # Remove missing / blank entries
+    user_vcfs = [v for v in user_vcfs if v not in (None, "", "null")]
+
+    if len(user_vcfs) < 3:
         raise ValueError(
-            f"Consensus calling requires at least 3 VCFs, but only {n_callers} were found."
+            f"Consensus calling requires at least 3 VCFs, but only {len(user_vcfs)} were specified."
         )
 
-    if n_callers > 7:
+    if len(user_vcfs) > 7:
         raise ValueError(
-            f"This workflow supports at most 7 VCFs, but {n_callers} were found."
+            f"This workflow supports at most 7 VCFs, but {len(user_vcfs)} were specified."
         )
 
-    print(f"Found {n_callers} VCFs")
+    vcf_pairs = [validate_vcf(vcf, all_files) for vcf in user_vcfs]
 
+    print(f"Using {len(vcf_pairs)} user-specified VCFs")
+
+    # Optional: add internal normalized params too, if you want them for debugging/future use
     for i, pair in enumerate(vcf_pairs):
         ds.add_param(f"caller_vcf_{i}", pair["vcf"])
         ds.add_param(f"caller_tbi_{i}", pair["tbi"])
 
-    ds.add_param("n_callers", n_callers)
-    ds.add_param("snv_min_callers", n_callers - 1)
+    ds.add_param("n_callers", len(vcf_pairs))
+    ds.add_param("snv_min_callers", len(vcf_pairs) - 1)
     ds.add_param("indel_min_callers", 2)
+
+    print("\nSelected VCF pairs:")
+    print(json.dumps(vcf_pairs, indent=2))
 
     print("\nFinal parameters:")
     print(json.dumps(ds.params, indent=2, default=str))
