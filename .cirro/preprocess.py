@@ -1,5 +1,4 @@
 import json
-import pandas as pd
 from cirro.helpers.preprocess_dataset import PreprocessDataset
 
 
@@ -7,15 +6,15 @@ def extract_vcfs(ds):
     df = ds.files.copy()
     df["file"] = df["file"].astype(str)
 
-    vcf_files = df[df["file"].str.endswith(".vcf.gz")]["file"].tolist()
-    tbi_files = df[df["file"].str.endswith(".vcf.gz.tbi")]["file"].tolist()
+    vcf_files = sorted(df[df["file"].str.endswith(".vcf.gz")]["file"].tolist())
+    tbi_files = set(df[df["file"].str.endswith(".vcf.gz.tbi")]["file"].tolist())
 
     if not vcf_files:
         raise ValueError("No VCF files found in dataset")
 
     pairs = []
-    for vcf in sorted(vcf_files):
-        tbi = vcf + ".tbi"
+    for vcf in vcf_files:
+        tbi = f"{vcf}.tbi"
         if tbi not in tbi_files:
             raise ValueError(f"Missing TBI index for {vcf}")
         pairs.append({"vcf": vcf, "tbi": tbi})
