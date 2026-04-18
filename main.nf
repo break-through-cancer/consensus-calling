@@ -14,6 +14,7 @@ include { CONSENSUS_SNVS } from './modules/consensus_snvs'
 include { CONSENSUS_INDELS } from './modules/consensus_indels'
 include { MERGE_CONSENSUS } from './modules/merge_consensus'
 
+//TODO: you could make it such that you input the tbis as well as the file, but maybe this is somethign we can solve later instead of creating the tbi everyt ime
 process ENSURE_INDEX {
     tag "${caller_id}"
     container 'quay.io/biocontainers/bcftools:1.20--h8b25389_0'
@@ -52,7 +53,9 @@ workflow {
     }
 
     indexed_ch = ENSURE_INDEX(vcf_ch)
-    filtered_ch = LIGHT_FILTER(indexed_ch)
+
+    //dont light filter for now
+    filtered_ch =indexed_ch
 
     split_ch = SPLIT_SNVS_INDELS(filtered_ch)
 
