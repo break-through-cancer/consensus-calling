@@ -52,11 +52,7 @@ workflow {
         tuple(caller_id, file(vcf))
     }
 
-    def caller_ids = vcfs.collect { fileLabel(it) }
-
-    if (caller_ids.size() != caller_ids.toSet().size()) {
-        error "Caller IDs derived from filenames are not unique: ${caller_ids}"
-    }
+  
     indexed_ch = ENSURE_INDEX(vcf_ch)
 
     //dont light filter for now
