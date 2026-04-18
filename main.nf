@@ -14,6 +14,23 @@ include { CONSENSUS_SNVS } from './modules/consensus_snvs'
 include { CONSENSUS_INDELS } from './modules/consensus_indels'
 include { MERGE_CONSENSUS } from './modules/merge_consensus'
 
+process ENSURE_INDEX {
+    tag "${caller_id}"
+    container 'quay.io/biocontainers/bcftools:1.20--h8b25389_0'
+
+    input:
+    tuple val(caller_id), path(vcf)
+
+    output:
+    tuple val(caller_id), path(vcf), path("${vcf}.tbi")
+
+    script:
+    """
+    bcftools index -t ${vcf}
+    """
+}
+
+
 workflow {
 
     vcfs = [
@@ -26,16 +43,16 @@ workflow {
     }
 
     vcf_ch = Channel
-        .fromList(vcfs)
-        .map { vcf ->
-            tuple(
-                vcf.tokenize('/')[-1].replace('.vcf.gz',''),
-                file(vcf),
-                file(vcf + '.tbi')
-            )
-        }
+    .fromList(vcfs)
+    .map { vcf ->
+        tuple(
+            vcf.tokenize('/')[-1].replace('.vcf.gz',''),
+            file(vcf)
+        )
+    }
 
-    filtered_ch = LIGHT_FILTER(vcf_ch)
+    indexed_ch = ENSURE_INDEX(vcf_ch)
+    filtered_ch = LIGHT_FILTER(indexed_ch)
 
     split_ch = SPLIT_SNVS_INDELS(filtered_ch)
 
@@ -50,3 +67,4 @@ workflow {
 
     MERGE_CONSENSUS(snv_consensus, indel_consensus)
 }
+
