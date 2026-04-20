@@ -1,7 +1,7 @@
 process CONSENSUS_SNVS {
     tag "snv_consensus"
     container 'quay.io/biocontainers/bcftools:1.20--h8b25389_0'
-    
+
     input:
     path vcfs
     path tbis
@@ -24,7 +24,11 @@ process CONSENSUS_SNVS {
     bcftools merge --force-samples --file-list snv_vcfs.list -m none -Oz -o merged_snvs.vcf.gz
     bcftools index -t merged_snvs.vcf.gz
 
-    python ${projectDir}/bin/snv_consensus.py merged_snvs.vcf.gz \$min_callers snv_consensus.vcf.gz
+    bcftools view \
+      -i "N_PASS(GT!=\\"mis\\")>=\$min_callers" \
+      -Oz \
+      -o snv_consensus.vcf.gz \
+      merged_snvs.vcf.gz
 
     bcftools index -t snv_consensus.vcf.gz
     """
