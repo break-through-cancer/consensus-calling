@@ -21,7 +21,7 @@ process CONSENSUS_SNVS {
         min_callers=$params.snv_min_callers
     fi
 
-    bcftools merge --file-list snv_vcfs.list -m none -Oz -o merged_snvs.vcf.gz
+    bcftools merge --force-samples --file-list snv_vcfs.list -m none -Oz -o merged_snvs.vcf.gz
     bcftools index -t merged_snvs.vcf.gz
 
     python ${projectDir}/bin/snv_consensus.py merged_snvs.vcf.gz \$min_callers snv_consensus.vcf.gz
