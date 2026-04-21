@@ -8,9 +8,18 @@ process CONSENSUS_SNVS {
 
     output:
     tuple path("snv_consensus.vcf.gz"), path("snv_consensus.vcf.gz.tbi")
-
+    path("snv_support_histogram.tsv")
     script:
     """
+    echo "=== INPUT FILES ==="
+    ls -lh *.vcf.gz
+
+    echo "=== VARIANT COUNTS PER INPUT ==="
+    for f in *.vcf.gz; do
+        echo -n "$f: "
+        bcftools view -H "$f" | wc -l
+    done
+
     ls -1 *.vcf.gz > snv_vcfs.list
 
     n=\$(wc -l < snv_vcfs.list)
@@ -31,5 +40,19 @@ process CONSENSUS_SNVS {
       merged_snvs.vcf.gz
 
     bcftools index -t snv_consensus.vcf.gz
+
+    echo "=== SUPPORT HISTOGRAM TSV ==="
+
+    bcftools query -f '[%GT\t]\n' merged_snvs.vcf.gz | \
+    awk '
+    {
+        c=0
+        for(i=1;i<=NF;i++) {
+            if($i != "./." && $i != ".") c++
+        }
+        print c
+    }' | sort -n | uniq -c | \
+    awk '{print $2 "\t" $1}' \
+    > snv_support_histogram.tsv.tsv
     """
 }

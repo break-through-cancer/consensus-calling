@@ -43,6 +43,10 @@ workflow {
         error "Need at least 3 VCFs for consensus"
     }
 
+    println "=== RAW PARAM INPUTS ==="
+    println vcfs
+    println "Total VCFs: ${vcfs.size()}"
+
     vcf_ch = Channel
     .fromList(vcfs)
     .map { vcf ->
@@ -52,13 +56,14 @@ workflow {
         tuple(caller_id, file(vcf))
     }
 
-  
+    vcf_ch.view { "VCF_CH → caller_id=${it[0]}, file=${it[1]}" }
+
     indexed_ch = ENSURE_INDEX(vcf_ch)
 
     //dont light filter for now
     filtered_ch =indexed_ch
 
-    split_ch = SPLIT_SNVS_INDELS(filtered_ch)
+    split_ch = SPLIT_SNVS_INDELS(filtered_ch, params.ref_fasta, params.ref_fai)
 
     snv_vcfs = split_ch.snvs.map { caller_id, vcf, tbi -> vcf }.collect()
     snv_tbis = split_ch.snvs.map { caller_id, vcf, tbi -> tbi }.collect()

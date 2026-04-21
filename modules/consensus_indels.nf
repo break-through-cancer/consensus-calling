@@ -8,9 +8,17 @@ process CONSENSUS_INDELS {
 
     output:
     tuple path("indel_consensus.vcf.gz"), path("indel_consensus.vcf.gz.tbi")
-
+    path("indel_support_histogram.tsv")
     script:
     """
+    echo "=== INPUT FILES ==="
+    ls -lh *.vcf.gz
+
+    echo "=== VARIANT COUNTS PER INPUT ==="
+    for f in *.vcf.gz; do
+        echo -n "$f: "
+        bcftools view -H "$f" | wc -l
+    done
     ls -1 *.vcf.gz > indel_vcfs.list
 
     bcftools merge --force-samples --file-list indel_vcfs.list -m none -Oz -o merged_indels.vcf.gz
@@ -23,5 +31,19 @@ process CONSENSUS_INDELS {
       merged_indels.vcf.gz
 
     bcftools index -t indel_consensus.vcf.gz
+
+    echo "=== SUPPORT HISTOGRAM TSV ==="
+
+    bcftools query -f '[%GT\t]\n' merged_indels.vcf.gz | \
+    awk '
+    {
+        c=0
+        for(i=1;i<=NF;i++) {
+            if($i != "./." && $i != ".") c++
+        }
+        print c
+    }' | sort -n | uniq -c | \
+    awk '{print $2 "\t" $1}' \
+    > indel_support_histogram.tsv
     """
 }
