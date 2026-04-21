@@ -16,8 +16,8 @@ process CONSENSUS_INDELS {
 
     echo "=== VARIANT COUNTS PER INPUT ==="
     for f in *.vcf.gz; do
-        echo -n "$f: "
-        bcftools view -H "$f" | wc -l
+        echo -n "\$f: "
+        bcftools view -H "\$f" | wc -l
     done
     ls -1 *.vcf.gz > indel_vcfs.list
 
