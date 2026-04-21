@@ -52,6 +52,6 @@ process CONSENSUS_SNVS {
         print c
     }' | sort -n | uniq -c | \
     awk '{print \$2 "\t" \$1}' \
-    > snv_support_histogram.tsv.tsv
+    > snv_support_histogram.tsv
     """
 }
