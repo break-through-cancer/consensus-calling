@@ -48,11 +48,11 @@ process CONSENSUS_SNVS {
     {
         c=0
         for(i=1;i<=NF;i++) {
-            if($i != "./." && $i != ".") c++
+            if(\$i != "./." && \$i != ".") c++
         }
         print c
     }' | sort -n | uniq -c | \
-    awk '{print $2 "\t" $1}' \
+    awk '{print \$2 "\t" \$1}' \
     > snv_support_histogram.tsv.tsv
     """
 }
