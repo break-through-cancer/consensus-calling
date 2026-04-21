@@ -63,7 +63,11 @@ workflow {
     //dont light filter for now
     filtered_ch =indexed_ch
 
-    split_ch = SPLIT_SNVS_INDELS(filtered_ch, params.ref_fasta, params.ref_fai)
+    split_ch = SPLIT_SNVS_INDELS(
+        filtered_ch,
+        file(params.ref_fasta),
+        file(params.ref_fai)
+    )
 
     snv_vcfs = split_ch.snvs.map { caller_id, vcf, tbi -> vcf }.collect()
     snv_tbis = split_ch.snvs.map { caller_id, vcf, tbi -> tbi }.collect()
@@ -74,6 +78,6 @@ workflow {
     snv_consensus = CONSENSUS_SNVS(snv_vcfs, snv_tbis)
     indel_consensus = CONSENSUS_INDELS(indel_vcfs, indel_tbis)
 
-    MERGE_CONSENSUS(snv_consensus, indel_consensus)
+    MERGE_CONSENSUS(snv_consensus.consensus, indel_consensus.consensus)
 }
 

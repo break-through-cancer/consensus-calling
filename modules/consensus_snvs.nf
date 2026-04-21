@@ -7,8 +7,8 @@ process CONSENSUS_SNVS {
     path tbis
 
     output:
-    tuple path("snv_consensus.vcf.gz"), path("snv_consensus.vcf.gz.tbi")
-    path("snv_support_histogram.tsv")
+    tuple path("snv_consensus.vcf.gz"), path("snv_consensus.vcf.gz.tbi"), emit: consensus
+    path("snv_support_histogram.tsv"), emit: histogram
     script:
     """
     echo "=== INPUT FILES ==="

@@ -7,8 +7,8 @@ process CONSENSUS_INDELS {
     path tbis
 
     output:
-    tuple path("indel_consensus.vcf.gz"), path("indel_consensus.vcf.gz.tbi")
-    path("indel_support_histogram.tsv")
+    tuple path("indel_consensus.vcf.gz"), path("indel_consensus.vcf.gz.tbi"), emit: consensus
+    path("indel_support_histogram.tsv"), emit: histogram
     script:
     """
     echo "=== INPUT FILES ==="
