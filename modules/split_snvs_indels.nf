@@ -6,6 +6,7 @@ process SPLIT_SNVS_INDELS {
     tuple val(caller_id), path(vcf), path(tbi)
     path ref_fasta
     path ref_fai
+    val tumor_sample_name
 
     output:
     tuple val(caller_id), path("${caller_id}.snvs.vcf.gz"), path("${caller_id}.snvs.vcf.gz.tbi"), emit: snvs
@@ -18,8 +19,21 @@ process SPLIT_SNVS_INDELS {
     echo -n "RAW total: "
     bcftools view -H ${vcf} | wc -l
 
+    bcftools query -l ${vcf} > samples.txt
+
+    echo "=== GETTING ONLY TUMOR COLUMN ==="
+    if grep -Fxq "${tumor_sample_name}" samples.txt; then
+        bcftools view -s "${tumor_sample_name}" ${vcf} -Oz -o ${caller_id}.tumor_only.vcf.gz
+    else
+        echo "ERROR: tumor sample ${tumor_sample_name} not found in ${vcf}" >&2
+        cat samples.txt >&2
+        exit 1
+    fi
+
+    bcftools index -t ${caller_id}.tumor_only.vcf.gz
+
     echo "=== NORMALIZING ${caller_id} ==="
-    bcftools norm -f ${ref_fasta} -m -any ${vcf} -Oz -o ${caller_id}.norm.vcf.gz
+    bcftools norm -f ${ref_fasta} -m -any ${caller_id}.tumor_only.vcf.gz -Oz -o ${caller_id}.norm.vcf.gz
     bcftools index -t ${caller_id}.norm.vcf.gz
 
     echo -n "NORMALIZED total: "
