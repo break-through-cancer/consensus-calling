@@ -66,8 +66,7 @@ workflow {
     split_ch = SPLIT_SNVS_INDELS(
         filtered_ch,
         file(params.ref_fasta),
-        file(params.ref_fai),
-        params.tumor_sample_name
+        file(params.ref_fai)
     )
 
     snv_vcfs = split_ch.snvs.map { caller_id, vcf, tbi -> vcf }.collect()
