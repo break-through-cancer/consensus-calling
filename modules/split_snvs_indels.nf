@@ -6,7 +6,6 @@ process SPLIT_SNVS_INDELS {
     tuple val(caller_id), path(vcf), path(tbi)
     path ref_fasta
     path ref_fai
-    val tumor_sample_name
 
     output:
     tuple val(caller_id), path("${caller_id}.snvs.vcf.gz"), path("${caller_id}.snvs.vcf.gz.tbi"), emit: snvs
@@ -14,23 +13,38 @@ process SPLIT_SNVS_INDELS {
 
     script:
     """
-    echo "=== QC ${caller_id} ==="
-
-    echo -n "RAW total: "
-    bcftools view -H ${vcf} | wc -l
+    echo "=== ${caller_id}: DETERMINE TUMOR SAMPLE ==="
 
     bcftools query -l ${vcf} > samples.txt
+    echo "Samples:"
+    cat samples.txt
 
-    echo "=== GETTING ONLY TUMOR COLUMN ==="
-    if grep -Fxq "${tumor_sample_name}" samples.txt; then
-        bcftools view -s "${tumor_sample_name}" ${vcf} -Oz -o ${caller_id}.tumor_only.vcf.gz
+    if echo "${caller_id}" | grep -qi "strelka"; then
+        selected_sample="TUMOR"
     else
-        echo "ERROR: tumor sample ${tumor_sample_name} not found in ${vcf}" >&2
+        selected_sample=\$(grep -viE 'PBMC|NORMAL|BLOOD' samples.txt | head -n 1)
+    fi
+
+    if [ -z "\$selected_sample" ]; then
+        echo "ERROR: could not identify tumor sample for ${caller_id}" >&2
         cat samples.txt >&2
         exit 1
     fi
 
+    if ! grep -Fxq "\$selected_sample" samples.txt; then
+        echo "ERROR: selected sample \$selected_sample not found in ${caller_id}" >&2
+        cat samples.txt >&2
+        exit 1
+    fi
+
+    echo "Selected tumor sample: \$selected_sample"
+
+    bcftools view -s "\$selected_sample" ${vcf} -Oz -o ${caller_id}.tumor_only.vcf.gz
     bcftools index -t ${caller_id}.tumor_only.vcf.gz
+
+    echo "=== QC ${caller_id} ==="
+    echo -n "RAW total: "
+    bcftools view -H ${vcf} | wc -l
 
     echo "=== NORMALIZING ${caller_id} ==="
     bcftools norm -f ${ref_fasta} -m -any ${caller_id}.tumor_only.vcf.gz -Oz -o ${caller_id}.norm.vcf.gz
