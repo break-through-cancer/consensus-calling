@@ -85,17 +85,16 @@ process CONSENSUS_SNVS {
     bcftools view -H snv_consensus.vcf.gz | wc -l
 
     echo "=== CONSENSUS VALIDATION (SNVS) ==="
-
     echo "=== CONSENSUS VALIDATION (SNVS) ==="
 
-    expected_consensus_count=$(awk -v m="$min_callers" '
+    expected_consensus_count=\$(awk -v m="\$min_callers" '
     \$1 >= m {s += \$2}
     END {print s+0}
     ' snv_support_histogram.tsv)
 
-    actual_consensus_count=$(bcftools view -H snv_consensus.vcf.gz | wc -l)
+    actual_consensus_count=\$(bcftools view -H snv_consensus.vcf.gz | wc -l)
 
-    echo "Expected (from histogram): \$expected_consensus_count"
-    echo "Actual   (VCF count):      \$actual_consensus_count"
+    echo "Expected from histogram: \$expected_consensus_count"
+    echo "Actual VCF count:        \$actual_consensus_count"
     """
 }
