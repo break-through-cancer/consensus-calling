@@ -10,13 +10,18 @@ process LIGHT_FILTER {
 
     script:
     """
+    set -euo pipefail
+
     bcftools view \
       -f 'PASS,.' \
-      -i 'FORMAT/AD[1] > 3 && FORMAT/AF[0] > 0.02' \
+      -i 'GT!="mis" && GT!="ref" && FORMAT/AD[1] > 3 && FORMAT/AF[0] > 0.02' \
       -Oz \
       -o ${caller_id}.filtered.vcf.gz \
       ${vcf}
 
     bcftools index -t ${caller_id}.filtered.vcf.gz
+
+    echo -n "${caller_id} filtered count: "
+    bcftools view -H ${caller_id}.filtered.vcf.gz | wc -l
     """
 }
