@@ -45,19 +45,7 @@ process CONSENSUS_INDELS {
         c=0
         for(i=1;i<=NF;i++) {
             gt=\$i
-
-            # Count only ALT genotypes.
-            # 0/0 is reference, not caller support.
-            if (
-                gt != "." &&
-                gt != "./." &&
-                gt != ".|." &&
-                gt != "0/0" &&
-                gt != "0|0" &&
-                gt ~ /[1-9]/
-            ) {
-                c++
-            }
+            if (gt ~ /[1-9]/) c++
         }
         print c
     }' | sort -n | uniq -c | \

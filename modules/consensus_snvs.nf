@@ -52,19 +52,7 @@ process CONSENSUS_SNVS {
         c=0
         for(i=1;i<=NF;i++) {
             gt=\$i
-
-            # Count only genotypes containing an ALT allele.
-            # Do NOT count 0/0, 0|0, ./., ., or missing.
-            if (
-                gt != "." &&
-                gt != "./." &&
-                gt != ".|." &&
-                gt != "0/0" &&
-                gt != "0|0" &&
-                gt ~ /[1-9]/
-            ) {
-                c++
-            }
+            if (gt ~ /[1-9]/) c++
         }
         print c
     }' | sort -n | uniq -c | \
