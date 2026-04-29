@@ -85,7 +85,6 @@ process CONSENSUS_SNVS {
     bcftools view -H snv_consensus.vcf.gz | wc -l
 
     echo "=== CONSENSUS VALIDATION (SNVS) ==="
-    echo "=== CONSENSUS VALIDATION (SNVS) ==="
 
     expected_consensus_count=\$(awk -v m="\$min_callers" '
     \$1 >= m {s += \$2}

@@ -76,5 +76,17 @@ process CONSENSUS_INDELS {
 
     echo -n "INDEL consensus count: "
     bcftools view -H indel_consensus.vcf.gz | wc -l
+
+    echo "=== CONSENSUS VALIDATION (INDELS) ==="
+
+    expected_consensus_count=\$(awk -v m="${params.indel_min_callers}" '
+    \$1 >= m {s += \$2}
+    END {print s+0}
+    ' indel_support_histogram.tsv)
+
+    actual_consensus_count=\$(bcftools view -H indel_consensus.vcf.gz | wc -l)
+
+    echo "Expected from histogram: \$expected_consensus_count"
+    echo "Actual VCF count:        \$actual_consensus_count"
     """
 }
