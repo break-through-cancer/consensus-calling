@@ -160,12 +160,12 @@ process CONSENSUS_SNVS {
     {
         c=0
         for(i=1;i<=NF;i++) {
-            gt=$i
+            gt=\$i
             if (gt ~ /[1-9]/) c++
         }
         print c
     }' | sort -n | uniq -c | \
-    awk '{print $2 "\t" $1}' \
+    awk '{print \$2 "\t" \$1}' \
     > snv_support_histogram.tsv
 
     echo "=== BUILD SNV CONSENSUS: require ALT support >= \$min_callers ==="
