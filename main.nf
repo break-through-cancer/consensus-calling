@@ -7,6 +7,8 @@ params.vcf4 = params.vcf4 ?: null
 params.vcf5 = params.vcf5 ?: null
 params.vcf6 = params.vcf6 ?: null
 params.vcf7 = params.vcf7 ?: null
+
+
 process CONSENSUS_INDELS {
     tag "indel_consensus"
     container 'quay.io/biocontainers/bcftools:1.20--h8b25389_0'
@@ -36,7 +38,6 @@ process CONSENSUS_INDELS {
 
     echo "INDEL min_callers=${params.indel_min_callers}"
 
-    # DO NOT use --missing-to-ref
     bcftools merge \\
       --force-samples \\
       --file-list indel_vcfs.list \\
@@ -45,14 +46,6 @@ process CONSENSUS_INDELS {
       -o merged_indels.vcf.gz
 
     bcftools index -f -t merged_indels.vcf.gz
-
-    echo "=== DEBUG: INDEL records passing liberal mis/ref support but not strict ALT support ==="
-
-    bcftools view \\
-      -i "N_PASS(GT!='mis' && GT!='ref')>=${params.indel_min_callers} && N_PASS(GT~\\"[1-9]\\")<${params.indel_min_callers}" \\
-      merged_indels.vcf.gz | \\
-      bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT[\\t%GT]\\n' | \\
-      head -50
 
     echo "=== ALT-support histogram from merged INDELs ==="
 
@@ -69,33 +62,32 @@ process CONSENSUS_INDELS {
     awk '{print \$2 "\\t" \$1}' \\
     > indel_support_histogram.tsv
 
-    echo "=== BUILD INDEL LIBERAL CONSENSUS: require non-missing/non-reference GT support >= ${params.indel_min_callers} ==="
+    echo "=== BUILD INDEL CONSENSUS: require ALT support >= ${params.indel_min_callers} ==="
 
     bcftools view \\
-      -i "N_PASS(GT!='mis' && GT!='ref')>=${params.indel_min_callers}" \\
+      -i "N_PASS(GT~\\"[1-9]\\")>=${params.indel_min_callers}" \\
       -Oz \\
       -o indel_consensus.vcf.gz \\
       merged_indels.vcf.gz
 
     bcftools index -f -t indel_consensus.vcf.gz
 
-    echo -n "INDEL liberal consensus count: "
+    echo -n "INDEL consensus count: "
     bcftools view -H indel_consensus.vcf.gz | wc -l
 
-    echo "=== CONSENSUS COMPARISON (INDELS) ==="
+    echo "=== CONSENSUS VALIDATION (INDELS) ==="
 
-    strict_alt_count=\$(awk -v m="${params.indel_min_callers}" '
+    expected_consensus_count=\$(awk -v m="${params.indel_min_callers}" '
     \$1 >= m {s += \$2}
     END {print s+0}
     ' indel_support_histogram.tsv)
 
-    liberal_consensus_count=\$(bcftools view -H indel_consensus.vcf.gz | wc -l)
+    actual_consensus_count=\$(bcftools view -H indel_consensus.vcf.gz | wc -l)
 
-    echo "Strict ALT-support count from histogram: \$strict_alt_count"
-    echo "Actual liberal consensus count:         \$liberal_consensus_count"
+    echo "Expected from histogram: \$expected_consensus_count"
+    echo "Actual VCF count:        \$actual_consensus_count"
     """
 }
-
 
 process CONSENSUS_SNVS {
     tag "snv_consensus"
@@ -133,29 +125,18 @@ process CONSENSUS_SNVS {
 
     echo "SNV min_callers=\$min_callers"
 
-    # DO NOT use --missing-to-ref
-    bcftools merge \
-      --force-samples \
-      --file-list snv_vcfs.list \
-      -m none \
-      -Oz \
+    bcftools merge \\
+      --force-samples \\
+      --file-list snv_vcfs.list \\
+      -m none \\
+      -Oz \\
       -o merged_snvs.vcf.gz
 
-    bcftools index -t merged_snvs.vcf.gz
-
-    # ===================== DEBUG BLOCK =====================
-    echo "=== DEBUG: mis/ref vs ALT-support disagreement ==="
-
-    bcftools view \
-      -i "N_PASS(GT!='mis' && GT!='ref')>=\$min_callers && N_PASS(GT~\"[1-9]\")<\$min_callers" \
-      merged_snvs.vcf.gz | \
-      bcftools query -f '%CHROM\t%POS\t%REF\t%ALT[\t%GT]\n' | \
-      head -50
-    # ======================================================
+    bcftools index -f -t merged_snvs.vcf.gz
 
     echo "=== ALT-support histogram from merged SNVs ==="
 
-    bcftools query -f '[%GT\t]\n' merged_snvs.vcf.gz | \
+    bcftools query -f '[%GT\\t]\\n' merged_snvs.vcf.gz | \\
     awk '
     {
         c=0
@@ -164,19 +145,19 @@ process CONSENSUS_SNVS {
             if (gt ~ /[1-9]/) c++
         }
         print c
-    }' | sort -n | uniq -c | \
-    awk '{print \$2 "\t" \$1}' \
+    }' | sort -n | uniq -c | \\
+    awk '{print \$2 "\\t" \$1}' \\
     > snv_support_histogram.tsv
 
     echo "=== BUILD SNV CONSENSUS: require ALT support >= \$min_callers ==="
 
-    bcftools view \
-      -i "N_PASS(GT!='mis' && GT!='ref')>=\$min_callers" \
-      -Oz \
-      -o snv_consensus.vcf.gz \
+    bcftools view \\
+      -i "N_PASS(GT~\\"[1-9]\\")>=\$min_callers" \\
+      -Oz \\
+      -o snv_consensus.vcf.gz \\
       merged_snvs.vcf.gz
 
-    bcftools index -t snv_consensus.vcf.gz
+    bcftools index -f -t snv_consensus.vcf.gz
 
     echo -n "SNV consensus count: "
     bcftools view -H snv_consensus.vcf.gz | wc -l
@@ -194,7 +175,6 @@ process CONSENSUS_SNVS {
     echo "Actual VCF count:        \$actual_consensus_count"
     """
 }
-
 
 process LIGHT_FILTER {
     tag "${caller_id}"
