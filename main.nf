@@ -571,14 +571,15 @@ workflow {
             tuple("indel", merged_tuple[0], merged_tuple[1], consensus_tuple[0], consensus_tuple[1])
         }
 
-    snv_qc_tsvs = MAKE_CONSENSUS_QC_TSVS(snv_qc_input)
-    indel_qc_tsvs = MAKE_CONSENSUS_QC_TSVS(indel_qc_input)
+    consensus_qc_input = snv_qc_input.mix(indel_qc_input)
 
-    PLOT_CONSENSUS_QC(snv_qc_tsvs.qc_tsvs)
-    PLOT_CONSENSUS_QC(indel_qc_tsvs.qc_tsvs)
+    consensus_qc_tsvs = MAKE_CONSENSUS_QC_TSVS(consensus_qc_input)
+
+    PLOT_CONSENSUS_QC(consensus_qc_tsvs.qc_tsvs)
 
     MERGE_CONSENSUS(snv_consensus.consensus, indel_consensus.consensus)
 }
+
 
 // nextflow.enable.dsl=2
 
