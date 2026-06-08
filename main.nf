@@ -62,15 +62,15 @@ process SPLIT_SNVS_INDELS {
     echo "[SPLIT_SNVS_INDELS] Starting processing for: ${caller_id}"
     echo "========================================================="
     
-    // Extract sample names present in the VCF file
+    # Extract sample names present in the VCF file
     bcftools query -l ${vcf} > samples.txt
     echo "[SPLIT_SNVS_INDELS] Found samples in VCF:"
     cat samples.txt
     
-    // Filter out common control/normal sample names to isolate the tumor sample
+    # Filter out common control/normal sample names to isolate the tumor sample
     grep -viE 'PBMC|NORMAL|BLOOD' samples.txt > tumor_samples.txt || true
     
-    // Strelka outputs rely on standard naming conventions ("TUMOR")
+    # Strelka outputs rely on standard naming conventions ("TUMOR")
     if echo "${caller_id}" | grep -qi "strelka"; then
         selected_sample="TUMOR"
     else
@@ -84,27 +84,27 @@ process SPLIT_SNVS_INDELS {
     fi
     echo "[SPLIT_SNVS_INDELS] Selected tumor sample: \$selected_sample"
     
-    // Step 1: Strip out normal samples, keeping only the selected tumor sample
+    # Step 1: Strip out normal samples, keeping only the selected tumor sample
     echo "[SPLIT_SNVS_INDELS] Subsetting to tumor sample only..."
     bcftools view -s "\$selected_sample" ${vcf} -Oz -o ${caller_id}.tumor_only.vcf.gz
     bcftools index -f -t ${caller_id}.tumor_only.vcf.gz
     
-    // Step 2: Remove genotype columns (-G) to enable site-level consensus matching
+    # Step 2: Remove genotype columns (-G) to enable site-level consensus matching
     echo "[SPLIT_SNVS_INDELS] Stripping genotype metrics (-G) for site-only analysis..."
     bcftools view -G ${caller_id}.tumor_only.vcf.gz -Oz -o ${caller_id}.sites_only.vcf.gz
     bcftools index -f -t ${caller_id}.sites_only.vcf.gz
     
-    // Step 3: Normalize variants against the reference and split multiallelics into separate rows
+    # Step 3: Normalizing variants against the reference and split multiallelics into separate rows
     echo "[SPLIT_SNVS_INDELS] Normalizing variants and splitting multiallelic sites..."
     bcftools norm -f ${ref_fasta} -m -any ${caller_id}.sites_only.vcf.gz -Oz -o ${caller_id}.norm.vcf.gz
     bcftools index -f -t ${caller_id}.norm.vcf.gz
     
-    // Step 4: Extract SNVs exclusively
+    # Step 4: Extract SNVs exclusively
     echo "[SPLIT_SNVS_INDELS] Filtering SNVs..."
     bcftools view -v snps ${caller_id}.norm.vcf.gz -Oz -o ${caller_id}.snvs.vcf.gz
     bcftools index -f -t ${caller_id}.snvs.vcf.gz
     
-    // Step 5: Extract INDELs exclusively
+    # Step 5: Extract INDELs exclusively
     echo "[SPLIT_SNVS_INDELS] Filtering INDELs..."
     bcftools view -v indels ${caller_id}.norm.vcf.gz -Oz -o ${caller_id}.indels.vcf.gz
     bcftools index -f -t ${caller_id}.indels.vcf.gz
@@ -144,7 +144,7 @@ process CONSENSUS_SNVS {
     ls -1 *.vcf.gz > snv_vcfs.list
     n=\$(wc -l < snv_vcfs.list)
     
-    // Determine majority rule cut-off if not explicitly set
+    # Determine majority rule cut-off if not explicitly set
     if [ "${params.snv_min_callers}" = "null" ] || [ -z "${params.snv_min_callers}" ]; then
         min_callers=\$((n-1))
     else
@@ -156,7 +156,7 @@ process CONSENSUS_SNVS {
     first_vcf=\$(head -n 1 snv_vcfs.list)
     > all_sites.tsv
     
-    // Stream variants out of every VCF and append a standardized string key
+    # Stream variants out of every VCF and append a standardized string key
     echo "[CONSENSUS_SNVS] Streaming and flattening all variant files into text matrices..."
     for f in *.vcf.gz; do
         caller="\${f%.snvs.vcf.gz}"
@@ -170,7 +170,7 @@ process CONSENSUS_SNVS {
     done
 
     echo "[CONSENSUS_SNVS] Launching memory-efficient Awk engine (Single Pass)..."
-    // --- STREAMLINED SINGLE-PASS AWK ENGINE (FIXED BOTTLENECK) ---
+    # --- STREAMLINED SINGLE-PASS AWK ENGINE (FIXED BOTTLENECK) ---
     awk -v m="\$min_callers" '
     BEGIN {
         OFS="\\t"
@@ -178,21 +178,21 @@ process CONSENSUS_SNVS {
     {
         key=\$1; caller=\$2
         
-        // Reconstruct the raw original VCF record row text
+        # Reconstruct the raw original VCF record row text
         vcf_row=\$3
         for(i=4; i<=NF; i++) vcf_row = vcf_row OFS \$i
         
-        // Count how many times this specific variant has been seen across callers
+        # Count how many times this specific variant has been seen across callers
         count[key]++
         
-        // Append unique variant callers to a comma-separated list
+        # Append unique variant callers to a comma-separated list
         if (callers[key] == "") {
             callers[key] = caller
         } else if (index(callers[key], caller) == 0) {
             callers[key] = callers[key] "," caller
         }
         
-        // Preserve the first valid VCF line encountered for our final output construction
+        # Preserve the first valid VCF line encountered for our final output construction
         if (!(key in body)) {
             body[key] = vcf_row
         }
@@ -203,7 +203,7 @@ process CONSENSUS_SNVS {
         for (key in count) {
             print count[key] > "raw_counts.txt"
             
-            // Check if the current variant meets our operational filter threshold
+            # Check if the current variant meets our operational filter threshold
             if (count[key] >= m) {
                 print key, count[key], callers[key] > "snv_caller_support.tsv"
                 print body[key] > "consensus.body"
@@ -275,7 +275,7 @@ process CONSENSUS_INDELS {
     done
 
     echo "[CONSENSUS_INDELS] Launching memory-efficient Awk engine (Single Pass)..."
-    // --- STREAMLINED SINGLE-PASS AWK ENGINE (FIXED BOTTLENECK) ---
+    # --- STREAMLINED SINGLE-PASS AWK ENGINE (FIXED BOTTLENECK) ---
     awk -v m="\$min_callers" '
     BEGIN {
         OFS="\\t"
