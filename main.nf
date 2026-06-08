@@ -149,8 +149,10 @@ process CONSENSUS_SNVS {
     echo "[CONSENSUS_SNVS] Minimum caller threshold (min_callers): \$min_callers"
     
     echo "[CONSENSUS_SNVS] Merging caller headers..."
-    bcftools merge --force-samples *.vcf.gz -O u | bcftools view -h > consensus.header
-    
+    echo "[CONSENSUS_SNVS] Getting header from first VCF..."
+    first_vcf=\$(ls -1 *.vcf.gz | head -n 1)
+    gzip -dc "\$first_vcf" | awk '/^#/ {print} !/^#/ {exit}' > consensus.header
+        
     > all_sites.tsv
     
     echo "[CONSENSUS_SNVS] Flattening variant files..."
@@ -252,7 +254,9 @@ process CONSENSUS_INDELS {
     echo "[CONSENSUS_INDELS] Minimum caller threshold (min_callers): \$min_callers"
     
     echo "[CONSENSUS_INDELS] Merging caller headers..."
-    bcftools merge --force-samples *.vcf.gz -O u | bcftools view -h > consensus.header
+    first_vcf=\$(ls -1 *.vcf.gz | head -n 1)
+    gzip -dc "\$first_vcf" | awk '/^#/ {print} !/^#/ {exit}' > consensus.header
+    
     
     > all_sites.tsv
     
