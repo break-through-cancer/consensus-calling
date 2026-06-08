@@ -134,29 +134,28 @@ process CONSENSUS_SNVS {
     """
     set -euo pipefail
     echo "========================================================="
-    echo "[CONSENSUS_SNVS] Starting SNV Consensus Aggregation"
+    echo "[CONSENSUS_SNVS] Starting Low-RAM SNV Consensus"
     echo "========================================================="
     
     ls -1 *.vcf.gz > snv_vcfs.list
     n=\$(wc -l < snv_vcfs.list)
     
-    # Determine majority rule cut-off if not explicitly set
     if [ "${params.snv_min_callers}" = "null" ] || [ -z "${params.snv_min_callers}" ]; then
         min_callers=\$((n-1))
     else
         min_callers=${params.snv_min_callers}
     fi
     echo "[CONSENSUS_SNVS] Total input VCF callers: \$n"
-    echo "[CONSENSUS_SNVS] Calculated minimum caller threshold (min_callers): \$min_callers"
+    echo "[CONSENSUS_SNVS] Minimum caller threshold (min_callers): \$min_callers"
     
-    first_vcf=\$(head -n 1 snv_vcfs.list)
+    echo "[CONSENSUS_SNVS] Merging caller headers..."
+    bcftools merge --force-samples *.vcf.gz -O u | bcftools view -h > consensus.header
+    
     > all_sites.tsv
     
-    # Stream variants out of every VCF and append a standardized string key
-    echo "[CONSENSUS_SNVS] Streaming and flattening all variant files into text matrices..."
+    echo "[CONSENSUS_SNVS] Flattening variant files..."
     for f in *.vcf.gz; do
         caller="\${f%.snvs.vcf.gz}"
-        echo "  -> Extracting records from: \$caller"
         bcftools view -H "\$f" | awk -v caller="\$caller" '
         BEGIN {OFS="\\t"}
         {
@@ -165,28 +164,17 @@ process CONSENSUS_SNVS {
         }' >> all_sites.tsv
     done
 
-    echo "[CONSENSUS_SNVS] Launching memory-efficient Awk engine (Single Pass)..."
+    echo "[CONSENSUS_SNVS] Running Pass 1 (Counting frequencies in RAM)..."
     awk -v m="\$min_callers" '
-    BEGIN {
-        OFS="\\t"
-    }
+    BEGIN { OFS="\\t" }
     {
         key=\$1; caller=\$2
-        
-        # Reconstruct the raw original VCF record row text
-        vcf_row=\$3
-        for(i=4; i<=NF; i++) vcf_row = vcf_row OFS \$i
-        
         count[key]++
         
         if (callers[key] == "") {
             callers[key] = caller
         } else if (index(callers[key], caller) == 0) {
             callers[key] = callers[key] "," caller
-        }
-        
-        if (!(key in body)) {
-            body[key] = vcf_row
         }
     }
     END {
@@ -195,12 +183,28 @@ process CONSENSUS_SNVS {
             print count[key] > "raw_counts.txt"
             if (count[key] >= m) {
                 print key, count[key], callers[key] > "snv_caller_support.tsv"
-                print body[key] > "consensus.body"
+                print key > "passing_keys.txt" # Offload target keys to disk
             }
         }
     }' all_sites.tsv
 
-    echo "[CONSENSUS_SNVS] Compiling histogram frequency distribution..."
+    echo "[CONSENSUS_SNVS] Running Pass 2 (Extracting passing rows from disk)..."
+    touch passing_keys.txt
+    awk '
+    BEGIN { OFS="\\t" }
+    NR==FNR { passing[\$1]=1; next } # Load just the verified string keys
+    {
+        key=\$1
+        if (key in passing && !(key in seen)) {
+            seen[key]=1
+            # Reconstruct and output the VCF text line directly to file stream
+            vcf_row=\$3
+            for(i=4; i<=NF; i++) vcf_row = vcf_row OFS \$i
+            print vcf_row > "consensus.body"
+        }
+    }' passing_keys.txt all_sites.tsv
+
+    echo "[CONSENSUS_SNVS] Compiling metrics..."
     if [ -f raw_counts.txt ]; then
         sort -n raw_counts.txt | uniq -c | awk 'BEGIN{OFS="\\t"} {print \$2,\$1}' > snv_support_histogram.tsv
     else
@@ -208,16 +212,12 @@ process CONSENSUS_SNVS {
     fi
     
     touch consensus.body
-
-    echo "[CONSENSUS_SNVS] Sorting and rebuilding final compressed consensus VCF structure..."
-    bcftools view -h "\$first_vcf" > consensus.header
     cat consensus.header consensus.body > unsorted_consensus.vcf
     
-    # FIX: Run bcftools sort to ensure chromosomal position linearity
     bcftools sort unsorted_consensus.vcf -Oz -o snv_consensus.vcf.gz
     bcftools index -f -t snv_consensus.vcf.gz
     
-    echo -n "[CONSENSUS_SNVS] Processing complete. Total valid consensus SNVs: "
+    echo -n "[CONSENSUS_SNVS] Done! Total valid consensus SNVs: "
     bcftools view -H snv_consensus.vcf.gz | wc -l
     """
 }
@@ -244,20 +244,21 @@ process CONSENSUS_INDELS {
     """
     set -euo pipefail
     echo "========================================================="
-    echo "[CONSENSUS_INDELS] Starting INDEL Consensus Aggregation"
+    echo "[CONSENSUS_INDELS] Starting Low-RAM INDEL Consensus"
     echo "========================================================="
     
     ls -1 *.vcf.gz > indel_vcfs.list
     min_callers=${params.indel_min_callers}
-    echo "[CONSENSUS_INDELS] Calculated minimum caller threshold (min_callers): \$min_callers"
+    echo "[CONSENSUS_INDELS] Minimum caller threshold (min_callers): \$min_callers"
     
-    first_vcf=\$(head -n 1 indel_vcfs.list)
+    echo "[CONSENSUS_INDELS] Merging caller headers..."
+    bcftools merge --force-samples *.vcf.gz -O u | bcftools view -h > consensus.header
+    
     > all_sites.tsv
     
-    echo "[CONSENSUS_INDELS] Streaming and flattening all variant files into text matrices..."
+    echo "[CONSENSUS_INDELS] Flattening variant files..."
     for f in *.vcf.gz; do
         caller="\${f%.indels.vcf.gz}"
-        echo "  -> Extracting records from: \$caller"
         bcftools view -H "\$f" | awk -v caller="\$caller" '
         BEGIN {OFS="\\t"}
         {
@@ -266,25 +267,17 @@ process CONSENSUS_INDELS {
         }' >> all_sites.tsv
     done
 
-    echo "[CONSENSUS_INDELS] Launching memory-efficient Awk engine (Single Pass)..."
+    echo "[CONSENSUS_INDELS] Running Pass 1 (Counting frequencies in RAM)..."
     awk -v m="\$min_callers" '
-    BEGIN {
-        OFS="\\t"
-    }
+    BEGIN { OFS="\\t" }
     {
         key=\$1; caller=\$2
-        vcf_row=\$3
-        for(i=4; i<=NF; i++) vcf_row = vcf_row OFS \$i
-        
         count[key]++
+        
         if (callers[key] == "") {
             callers[key] = caller
         } else if (index(callers[key], caller) == 0) {
             callers[key] = callers[key] "," caller
-        }
-        
-        if (!(key in body)) {
-            body[key] = vcf_row
         }
     }
     END {
@@ -293,12 +286,27 @@ process CONSENSUS_INDELS {
             print count[key] > "raw_counts.txt"
             if (count[key] >= m) {
                 print key, count[key], callers[key] > "indel_caller_support.tsv"
-                print body[key] > "consensus.body"
+                print key > "passing_keys.txt"
             }
         }
     }' all_sites.tsv
 
-    echo "[CONSENSUS_INDELS] Compiling histogram frequency distribution..."
+    echo "[CONSENSUS_INDELS] Running Pass 2 (Extracting passing rows from disk)..."
+    touch passing_keys.txt
+    awk '
+    BEGIN { OFS="\\t" }
+    NR==FNR { passing[\$1]=1; next }
+    {
+        key=\$1
+        if (key in passing && !(key in seen)) {
+            seen[key]=1
+            vcf_row=\$3
+            for(i=4; i<=NF; i++) vcf_row = vcf_row OFS \$i
+            print vcf_row > "consensus.body"
+        }
+    }' passing_keys.txt all_sites.tsv
+
+    echo "[CONSENSUS_INDELS] Compiling metrics..."
     if [ -f raw_counts.txt ]; then
         sort -n raw_counts.txt | uniq -c | awk 'BEGIN{OFS="\\t"} {print \$2,\$1}' > indel_support_histogram.tsv
     else
@@ -306,16 +314,12 @@ process CONSENSUS_INDELS {
     fi
     
     touch consensus.body
-
-    echo "[CONSENSUS_INDELS] Sorting and rebuilding final compressed consensus VCF structure..."
-    bcftools view -h "\$first_vcf" > consensus.header
     cat consensus.header consensus.body > unsorted_consensus.vcf
     
-    # FIX: Run bcftools sort to ensure chromosomal position linearity
     bcftools sort unsorted_consensus.vcf -Oz -o indel_consensus.vcf.gz
     bcftools index -f -t indel_consensus.vcf.gz
     
-    echo -n "[CONSENSUS_INDELS] Processing complete. Total valid consensus INDELs: "
+    echo -n "[CONSENSUS_INDELS] Done! Total valid consensus INDELs: "
     bcftools view -H indel_consensus.vcf.gz | wc -l
     """
 }
