@@ -116,10 +116,6 @@ process SPLIT_SNVS_INDELS {
     """
 }
 
-// ==============================================================================
-// PROCESS 3: CONSENSUS_SNVS
-// Merges caller files using highly optimized single-pass Awk associative memory arrays.
-// ==============================================================================
 process CONSENSUS_SNVS {
     tag "snv_consensus"
     container 'quay.io/biocontainers/bcftools:1.20--h8b25389_0'
@@ -170,7 +166,6 @@ process CONSENSUS_SNVS {
     done
 
     echo "[CONSENSUS_SNVS] Launching memory-efficient Awk engine (Single Pass)..."
-    # --- STREAMLINED SINGLE-PASS AWK ENGINE (FIXED BOTTLENECK) ---
     awk -v m="\$min_callers" '
     BEGIN {
         OFS="\\t"
@@ -182,28 +177,22 @@ process CONSENSUS_SNVS {
         vcf_row=\$3
         for(i=4; i<=NF; i++) vcf_row = vcf_row OFS \$i
         
-        # Count how many times this specific variant has been seen across callers
         count[key]++
         
-        # Append unique variant callers to a comma-separated list
         if (callers[key] == "") {
             callers[key] = caller
         } else if (index(callers[key], caller) == 0) {
             callers[key] = callers[key] "," caller
         }
         
-        # Preserve the first valid VCF line encountered for our final output construction
         if (!(key in body)) {
             body[key] = vcf_row
         }
     }
     END {
         print "variant_id", "support", "callers" > "snv_caller_support.tsv"
-        
         for (key in count) {
             print count[key] > "raw_counts.txt"
-            
-            # Check if the current variant meets our operational filter threshold
             if (count[key] >= m) {
                 print key, count[key], callers[key] > "snv_caller_support.tsv"
                 print body[key] > "consensus.body"
@@ -220,9 +209,12 @@ process CONSENSUS_SNVS {
     
     touch consensus.body
 
-    echo "[CONSENSUS_SNVS] Rebuilding final compressed consensus VCF structure..."
+    echo "[CONSENSUS_SNVS] Sorting and rebuilding final compressed consensus VCF structure..."
     bcftools view -h "\$first_vcf" > consensus.header
-    cat consensus.header consensus.body | bgzip -c > snv_consensus.vcf.gz
+    cat consensus.header consensus.body > unsorted_consensus.vcf
+    
+    # FIX: Run bcftools sort to ensure chromosomal position linearity
+    bcftools sort unsorted_consensus.vcf -Oz -o snv_consensus.vcf.gz
     bcftools index -f -t snv_consensus.vcf.gz
     
     echo -n "[CONSENSUS_SNVS] Processing complete. Total valid consensus SNVs: "
@@ -275,7 +267,6 @@ process CONSENSUS_INDELS {
     done
 
     echo "[CONSENSUS_INDELS] Launching memory-efficient Awk engine (Single Pass)..."
-    # --- STREAMLINED SINGLE-PASS AWK ENGINE (FIXED BOTTLENECK) ---
     awk -v m="\$min_callers" '
     BEGIN {
         OFS="\\t"
@@ -316,9 +307,12 @@ process CONSENSUS_INDELS {
     
     touch consensus.body
 
-    echo "[CONSENSUS_INDELS] Rebuilding final compressed consensus VCF structure..."
+    echo "[CONSENSUS_INDELS] Sorting and rebuilding final compressed consensus VCF structure..."
     bcftools view -h "\$first_vcf" > consensus.header
-    cat consensus.header consensus.body | bgzip -c > indel_consensus.vcf.gz
+    cat consensus.header consensus.body > unsorted_consensus.vcf
+    
+    # FIX: Run bcftools sort to ensure chromosomal position linearity
+    bcftools sort unsorted_consensus.vcf -Oz -o indel_consensus.vcf.gz
     bcftools index -f -t indel_consensus.vcf.gz
     
     echo -n "[CONSENSUS_INDELS] Processing complete. Total valid consensus INDELs: "
