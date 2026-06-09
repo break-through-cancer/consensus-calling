@@ -1,6 +1,5 @@
 nextflow.enable.dsl=2
 
-// Define pipeline parameters with default fallback values
 params.vcf1 = params.vcf1 ?: null
 params.vcf2 = params.vcf2 ?: null
 params.vcf3 = params.vcf3 ?: null
@@ -8,13 +7,13 @@ params.vcf4 = params.vcf4 ?: null
 params.vcf5 = params.vcf5 ?: null
 params.vcf6 = params.vcf6 ?: null
 params.vcf7 = params.vcf7 ?: null
+
 params.outdir = params.outdir ?: "results"
 params.qc_outdir = params.qc_outdir ?: "${params.outdir}/qc"
 
-// ==============================================================================
-// PROCESS 1: ENSURE_INDEX
-// Generates CSI/TBI index files for input VCFs if they are missing or outdated.
-// ==============================================================================
+params.snv_min_callers = params.snv_min_callers ?: null
+params.indel_min_callers = params.indel_min_callers ?: 2
+
 process ENSURE_INDEX {
     tag "${caller_id}"
     container 'quay.io/biocontainers/bcftools:1.20--h8b25389_0'
@@ -28,20 +27,16 @@ process ENSURE_INDEX {
     script:
     """
     set -euo pipefail
+
     echo "[ENSURE_INDEX] Processing caller: ${caller_id}"
-    echo "[ENSURE_INDEX] Target file: ${vcf}"
-    
+    echo "[ENSURE_INDEX] Input VCF: ${vcf}"
+
     bcftools index -f -t ${vcf}
-    
-    echo "[ENSURE_INDEX] Successfully indexed ${caller_id}"
+
+    echo "[ENSURE_INDEX] Done: ${caller_id}"
     """
 }
 
-// ==============================================================================
-// PROCESS 2: SPLIT_SNVS_INDELS
-// Isolates the tumor sample, drops genotypes to make it sites-only, 
-// normalizes variants, and splits them into distinct SNV and INDEL files.
-// ==============================================================================
 process SPLIT_SNVS_INDELS {
     tag "${caller_id}"
     container 'quay.io/biocontainers/bcftools:1.20--h8b25389_0'
@@ -58,60 +53,57 @@ process SPLIT_SNVS_INDELS {
     script:
     """
     set -euo pipefail
+
     echo "========================================================="
-    echo "[SPLIT_SNVS_INDELS] Starting processing for: ${caller_id}"
+    echo "[SPLIT_SNVS_INDELS] Caller: ${caller_id}"
     echo "========================================================="
-    
-    # Extract sample names present in the VCF file
+
+    echo "[SPLIT_SNVS_INDELS] Samples in input VCF:"
     bcftools query -l ${vcf} > samples.txt
-    echo "[SPLIT_SNVS_INDELS] Found samples in VCF:"
     cat samples.txt
-    
-    # Filter out common control/normal sample names to isolate the tumor sample
+
     grep -viE 'PBMC|NORMAL|BLOOD' samples.txt > tumor_samples.txt || true
-    
-    # Strelka outputs rely on standard naming conventions ("TUMOR")
+
     if echo "${caller_id}" | grep -qi "strelka"; then
         selected_sample="TUMOR"
     else
         selected_sample=\$(head -n 1 tumor_samples.txt)
     fi
-    
+
     if [ -z "\$selected_sample" ]; then
-        echo "ERROR: could not identify tumor sample for ${caller_id}" >&2
+        echo "ERROR: Could not identify tumor sample for ${caller_id}" >&2
         cat samples.txt >&2
         exit 1
     fi
+
     echo "[SPLIT_SNVS_INDELS] Selected tumor sample: \$selected_sample"
-    
-    # Step 1: Strip out normal samples, keeping only the selected tumor sample
-    echo "[SPLIT_SNVS_INDELS] Subsetting to tumor sample only..."
+
+    # Keep only the tumor sample.
+    # Do NOT use -G here because we want to preserve FORMAT/sample metrics.
     bcftools view -s "\$selected_sample" ${vcf} -Oz -o ${caller_id}.tumor_only.vcf.gz
     bcftools index -f -t ${caller_id}.tumor_only.vcf.gz
-    
-    # Step 2: Remove genotype columns (-G) to enable site-level consensus matching
-    echo "[SPLIT_SNVS_INDELS] Stripping genotype metrics (-G) for site-only analysis..."
-    bcftools view -G ${caller_id}.tumor_only.vcf.gz -Oz -o ${caller_id}.sites_only.vcf.gz
-    bcftools index -f -t ${caller_id}.sites_only.vcf.gz
-    
-    # Step 3: Normalizing variants against the reference and split multiallelics into separate rows
-    echo "[SPLIT_SNVS_INDELS] Normalizing variants and splitting multiallelic sites..."
-    bcftools norm -f ${ref_fasta} -m -any ${caller_id}.sites_only.vcf.gz -Oz -o ${caller_id}.norm.vcf.gz
+
+    # Normalize and split multiallelic variants.
+    bcftools norm \
+        -f ${ref_fasta} \
+        -m -any \
+        ${caller_id}.tumor_only.vcf.gz \
+        -Oz \
+        -o ${caller_id}.norm.vcf.gz
+
     bcftools index -f -t ${caller_id}.norm.vcf.gz
-    
-    # Step 4: Extract SNVs exclusively
-    echo "[SPLIT_SNVS_INDELS] Filtering SNVs..."
+
+    # Split into SNVs and INDELs while preserving FORMAT/sample fields.
     bcftools view -v snps ${caller_id}.norm.vcf.gz -Oz -o ${caller_id}.snvs.vcf.gz
     bcftools index -f -t ${caller_id}.snvs.vcf.gz
-    
-    # Step 5: Extract INDELs exclusively
-    echo "[SPLIT_SNVS_INDELS] Filtering INDELs..."
+
     bcftools view -v indels ${caller_id}.norm.vcf.gz -Oz -o ${caller_id}.indels.vcf.gz
     bcftools index -f -t ${caller_id}.indels.vcf.gz
-    
-    echo -n "[SPLIT_SNVS_INDELS] ${caller_id} Finished. Total SNVs: "
+
+    echo -n "[SPLIT_SNVS_INDELS] SNVs for ${caller_id}: "
     bcftools view -H ${caller_id}.snvs.vcf.gz | wc -l
-    echo -n "[SPLIT_SNVS_INDELS] ${caller_id} Finished. Total INDELs: "
+
+    echo -n "[SPLIT_SNVS_INDELS] INDELs for ${caller_id}: "
     bcftools view -H ${caller_id}.indels.vcf.gz | wc -l
     """
 }
@@ -133,101 +125,156 @@ process CONSENSUS_SNVS {
     script:
     """
     set -euo pipefail
+
     echo "========================================================="
-    echo "[CONSENSUS_SNVS] Starting Low-RAM SNV Consensus"
+    echo "[CONSENSUS_SNVS] Starting SNV consensus"
     echo "========================================================="
-    
-    ls -1 *.vcf.gz > snv_vcfs.list
+
+    ls -1 *.snvs.vcf.gz > snv_vcfs.list
     n=\$(wc -l < snv_vcfs.list)
-    
+
     if [ "${params.snv_min_callers}" = "null" ] || [ -z "${params.snv_min_callers}" ]; then
         min_callers=\$((n-1))
     else
         min_callers=${params.snv_min_callers}
     fi
-    echo "[CONSENSUS_SNVS] Total input VCF callers: \$n"
-    echo "[CONSENSUS_SNVS] Minimum caller threshold (min_callers): \$min_callers"
-    
-    echo "[CONSENSUS_SNVS] Merging caller headers..."
-    echo "[CONSENSUS_SNVS] Getting header from first VCF..."
-    first_vcf=\$(ls -1 *.vcf.gz | head -n 1)
-    gzip -dc "\$first_vcf" | awk '/^#/ {print} !/^#/ {exit}' > consensus.header
-        
-    > all_sites.tsv
-    
-    echo "[CONSENSUS_SNVS] Flattening variant files..."
-    for f in *.vcf.gz; do
-        caller="\${f%.snvs.vcf.gz}"
-        bcftools view -H "\$f" | awk -v caller="\$caller" '
-        BEGIN {OFS="\\t"}
-        {
-            key=\$1 ":" \$2 ":" \$4 ":" \$5
-            print key, caller, \$0
-        }' >> all_sites.tsv
-    done
 
-    echo "[CONSENSUS_SNVS] Running Pass 1 (Counting frequencies in RAM)..."
+    echo "[CONSENSUS_SNVS] Input callers: \$n"
+    echo "[CONSENSUS_SNVS] min_callers: \$min_callers"
+
+    first_vcf=\$(head -n 1 snv_vcfs.list)
+
+    # Build a sites-only VCF header. FORMAT/sample evidence goes to the TSV.
+    set +o pipefail
+    zcat -f "\$first_vcf" | awk '
+        BEGIN { OFS="\t" }
+        /^##/ { print; next }
+        /^#CHROM/ {
+            print \$1,\$2,\$3,\$4,\$5,\$6,\$7,\$8
+            exit
+        }
+    ' > consensus.header
+    set -o pipefail
+
+    > all_sites.tsv
+
+    echo "[CONSENSUS_SNVS] Flattening SNV caller files..."
+
+    while read f; do
+        caller="\${f%.snvs.vcf.gz}"
+
+        zcat -f "\$f" | awk -v caller="\$caller" '
+        BEGIN { OFS="\t" }
+        !/^#/ {
+            key = \$1 ":" \$2 ":" \$4 ":" \$5
+
+            format = "."
+            sample = "."
+
+            if (NF >= 9) {
+                format = \$9
+            }
+
+            if (NF >= 10) {
+                sample = \$10
+            }
+
+            print key, caller, \$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, format, sample
+        }' >> all_sites.tsv
+    done < snv_vcfs.list
+
+    echo "[CONSENSUS_SNVS] Counting caller support..."
+
     awk -v m="\$min_callers" '
-    BEGIN { OFS="\\t" }
+    BEGIN { OFS="\t" }
     {
-        key=\$1; caller=\$2
-        count[key]++
-        
-        if (callers[key] == "") {
-            callers[key] = caller
-        } else if (index(callers[key], caller) == 0) {
-            callers[key] = callers[key] "," caller
+        key = \$1
+        caller = \$2
+
+        if (!seen[key, caller]) {
+            seen[key, caller] = 1
+            count[key]++
+
+            if (callers[key] == "") {
+                callers[key] = caller
+            } else {
+                callers[key] = callers[key] "," caller
+            }
         }
     }
     END {
-        print "variant_id", "support", "callers" > "snv_caller_support.tsv"
         for (key in count) {
+            print key, count[key], callers[key] > "support.all.tsv"
             print count[key] > "raw_counts.txt"
+
             if (count[key] >= m) {
-                print key, count[key], callers[key] > "snv_caller_support.tsv"
-                print key > "passing_keys.txt" # Offload target keys to disk
+                print key > "passing_keys.txt"
             }
         }
     }' all_sites.tsv
 
-    echo "[CONSENSUS_SNVS] Running Pass 2 (Extracting passing rows from disk)..."
-    touch passing_keys.txt
-    awk '
-    BEGIN { OFS="\\t" }
-    NR==FNR { passing[\$1]=1; next } # Load just the verified string keys
-    {
-        key=\$1
-        if (key in passing && !(key in seen)) {
-            seen[key]=1
-            # Reconstruct and output the VCF text line directly to file stream
-            vcf_row=\$3
-            for(i=4; i<=NF; i++) vcf_row = vcf_row OFS \$i
-            print vcf_row > "consensus.body"
-        }
-    }' passing_keys.txt all_sites.tsv
+    touch passing_keys.txt raw_counts.txt support.all.tsv
 
-    echo "[CONSENSUS_SNVS] Compiling metrics..."
-    if [ -f raw_counts.txt ]; then
-        sort -n raw_counts.txt | uniq -c | awk 'BEGIN{OFS="\\t"} {print \$2,\$1}' > snv_support_histogram.tsv
-    else
-        touch snv_support_histogram.tsv
-    fi
-    
+    sort -n raw_counts.txt | uniq -c | awk 'BEGIN{OFS="\t"} {print \$2,\$1}' > snv_support_histogram.tsv
+
+    echo "[CONSENSUS_SNVS] Writing support TSV and consensus VCF body..."
+
+    awk '
+    BEGIN { OFS="\t" }
+
+    FILENAME == "passing_keys.txt" {
+        passing[\$1] = 1
+        next
+    }
+
+    FILENAME == "support.all.tsv" {
+        support[\$1] = \$2
+        callers[\$1] = \$3
+        next
+    }
+
+    FILENAME == "all_sites.tsv" {
+        key = \$1
+
+        if (key in passing) {
+            caller = \$2
+            chrom = \$3
+            pos = \$4
+            id = \$5
+            ref = \$6
+            alt = \$7
+            qual = \$8
+            filter = \$9
+            info = \$10
+            format = \$11
+            sample = \$12
+
+            print key, support[key], callers[key], caller, chrom, pos, id, ref, alt, qual, filter, info, format, sample >> "snv_caller_support.body.tsv"
+
+            if (!(key in emitted)) {
+                emitted[key] = 1
+                print chrom, pos, id, ref, alt, qual, filter, info >> "consensus.body"
+            }
+        }
+    }
+    ' passing_keys.txt support.all.tsv all_sites.tsv
+
+    {
+        echo -e "variant_id\tsupport\tcallers\tcaller\tchrom\tpos\tid\tref\talt\tqual\tfilter\tinfo\tformat\tsample"
+        cat snv_caller_support.body.tsv 2>/dev/null || true
+    } > snv_caller_support.tsv
+
     touch consensus.body
     cat consensus.header consensus.body > unsorted_consensus.vcf
-    
+
     bcftools sort unsorted_consensus.vcf -Oz -o snv_consensus.vcf.gz
     bcftools index -f -t snv_consensus.vcf.gz
-    
-    echo -n "[CONSENSUS_SNVS] Done! Total valid consensus SNVs: "
+
+    echo -n "[CONSENSUS_SNVS] Consensus SNV count: "
     bcftools view -H snv_consensus.vcf.gz | wc -l
     """
 }
 
-// ==============================================================================
-// PROCESS 4: CONSENSUS_INDELS
-// Mirror implementation of the SNV processing block tailored for insertion/deletion signatures.
-// ==============================================================================
 process CONSENSUS_INDELS {
     tag "indel_consensus"
     container 'quay.io/biocontainers/bcftools:1.20--h8b25389_0'
@@ -245,93 +292,152 @@ process CONSENSUS_INDELS {
     script:
     """
     set -euo pipefail
-    echo "========================================================="
-    echo "[CONSENSUS_INDELS] Starting Low-RAM INDEL Consensus"
-    echo "========================================================="
-    
-    ls -1 *.vcf.gz > indel_vcfs.list
-    min_callers=${params.indel_min_callers}
-    echo "[CONSENSUS_INDELS] Minimum caller threshold (min_callers): \$min_callers"
-    
-    echo "[CONSENSUS_INDELS] Merging caller headers..."
-    first_vcf=\$(ls -1 *.vcf.gz | head -n 1)
-    gzip -dc "\$first_vcf" | awk '/^#/ {print} !/^#/ {exit}' > consensus.header
-    
-    
-    > all_sites.tsv
-    
-    echo "[CONSENSUS_INDELS] Flattening variant files..."
-    for f in *.vcf.gz; do
-        caller="\${f%.indels.vcf.gz}"
-        bcftools view -H "\$f" | awk -v caller="\$caller" '
-        BEGIN {OFS="\\t"}
-        {
-            key=\$1 ":" \$2 ":" \$4 ":" \$5
-            print key, caller, \$0
-        }' >> all_sites.tsv
-    done
 
-    echo "[CONSENSUS_INDELS] Running Pass 1 (Counting frequencies in RAM)..."
+    echo "========================================================="
+    echo "[CONSENSUS_INDELS] Starting INDEL consensus"
+    echo "========================================================="
+
+    ls -1 *.indels.vcf.gz > indel_vcfs.list
+    n=\$(wc -l < indel_vcfs.list)
+
+    min_callers=${params.indel_min_callers}
+
+    echo "[CONSENSUS_INDELS] Input callers: \$n"
+    echo "[CONSENSUS_INDELS] min_callers: \$min_callers"
+
+    first_vcf=\$(head -n 1 indel_vcfs.list)
+
+    # Build sites-only VCF header. FORMAT/sample evidence goes to the TSV.
+    set +o pipefail
+    zcat -f "\$first_vcf" | awk '
+        BEGIN { OFS="\t" }
+        /^##/ { print; next }
+        /^#CHROM/ {
+            print \$1,\$2,\$3,\$4,\$5,\$6,\$7,\$8
+            exit
+        }
+    ' > consensus.header
+    set -o pipefail
+
+    > all_sites.tsv
+
+    echo "[CONSENSUS_INDELS] Flattening INDEL caller files..."
+
+    while read f; do
+        caller="\${f%.indels.vcf.gz}"
+
+        zcat -f "\$f" | awk -v caller="\$caller" '
+        BEGIN { OFS="\t" }
+        !/^#/ {
+            key = \$1 ":" \$2 ":" \$4 ":" \$5
+
+            format = "."
+            sample = "."
+
+            if (NF >= 9) {
+                format = \$9
+            }
+
+            if (NF >= 10) {
+                sample = \$10
+            }
+
+            print key, caller, \$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, format, sample
+        }' >> all_sites.tsv
+    done < indel_vcfs.list
+
+    echo "[CONSENSUS_INDELS] Counting caller support..."
+
     awk -v m="\$min_callers" '
-    BEGIN { OFS="\\t" }
+    BEGIN { OFS="\t" }
     {
-        key=\$1; caller=\$2
-        count[key]++
-        
-        if (callers[key] == "") {
-            callers[key] = caller
-        } else if (index(callers[key], caller) == 0) {
-            callers[key] = callers[key] "," caller
+        key = \$1
+        caller = \$2
+
+        if (!seen[key, caller]) {
+            seen[key, caller] = 1
+            count[key]++
+
+            if (callers[key] == "") {
+                callers[key] = caller
+            } else {
+                callers[key] = callers[key] "," caller
+            }
         }
     }
     END {
-        print "variant_id", "support", "callers" > "indel_caller_support.tsv"
         for (key in count) {
+            print key, count[key], callers[key] > "support.all.tsv"
             print count[key] > "raw_counts.txt"
+
             if (count[key] >= m) {
-                print key, count[key], callers[key] > "indel_caller_support.tsv"
                 print key > "passing_keys.txt"
             }
         }
     }' all_sites.tsv
 
-    echo "[CONSENSUS_INDELS] Running Pass 2 (Extracting passing rows from disk)..."
-    touch passing_keys.txt
-    awk '
-    BEGIN { OFS="\\t" }
-    NR==FNR { passing[\$1]=1; next }
-    {
-        key=\$1
-        if (key in passing && !(key in seen)) {
-            seen[key]=1
-            vcf_row=\$3
-            for(i=4; i<=NF; i++) vcf_row = vcf_row OFS \$i
-            print vcf_row > "consensus.body"
-        }
-    }' passing_keys.txt all_sites.tsv
+    touch passing_keys.txt raw_counts.txt support.all.tsv
 
-    echo "[CONSENSUS_INDELS] Compiling metrics..."
-    if [ -f raw_counts.txt ]; then
-        sort -n raw_counts.txt | uniq -c | awk 'BEGIN{OFS="\\t"} {print \$2,\$1}' > indel_support_histogram.tsv
-    else
-        touch indel_support_histogram.tsv
-    fi
-    
+    sort -n raw_counts.txt | uniq -c | awk 'BEGIN{OFS="\t"} {print \$2,\$1}' > indel_support_histogram.tsv
+
+    echo "[CONSENSUS_INDELS] Writing support TSV and consensus VCF body..."
+
+    awk '
+    BEGIN { OFS="\t" }
+
+    FILENAME == "passing_keys.txt" {
+        passing[\$1] = 1
+        next
+    }
+
+    FILENAME == "support.all.tsv" {
+        support[\$1] = \$2
+        callers[\$1] = \$3
+        next
+    }
+
+    FILENAME == "all_sites.tsv" {
+        key = \$1
+
+        if (key in passing) {
+            caller = \$2
+            chrom = \$3
+            pos = \$4
+            id = \$5
+            ref = \$6
+            alt = \$7
+            qual = \$8
+            filter = \$9
+            info = \$10
+            format = \$11
+            sample = \$12
+
+            print key, support[key], callers[key], caller, chrom, pos, id, ref, alt, qual, filter, info, format, sample >> "indel_caller_support.body.tsv"
+
+            if (!(key in emitted)) {
+                emitted[key] = 1
+                print chrom, pos, id, ref, alt, qual, filter, info >> "consensus.body"
+            }
+        }
+    }
+    ' passing_keys.txt support.all.tsv all_sites.tsv
+
+    {
+        echo -e "variant_id\tsupport\tcallers\tcaller\tchrom\tpos\tid\tref\talt\tqual\tfilter\tinfo\tformat\tsample"
+        cat indel_caller_support.body.tsv 2>/dev/null || true
+    } > indel_caller_support.tsv
+
     touch consensus.body
     cat consensus.header consensus.body > unsorted_consensus.vcf
-    
+
     bcftools sort unsorted_consensus.vcf -Oz -o indel_consensus.vcf.gz
     bcftools index -f -t indel_consensus.vcf.gz
-    
-    echo -n "[CONSENSUS_INDELS] Done! Total valid consensus INDELs: "
+
+    echo -n "[CONSENSUS_INDELS] Consensus INDEL count: "
     bcftools view -H indel_consensus.vcf.gz | wc -l
     """
 }
 
-// ==============================================================================
-// PROCESS 5: MERGE_CONSENSUS
-// Concatenates the validated consensus SNV and INDEL datasets back into a final VCF.
-// ==============================================================================
 process MERGE_CONSENSUS {
     tag "merge_consensus"
     container 'quay.io/biocontainers/bcftools:1.20--h8b25389_0'
@@ -347,23 +453,22 @@ process MERGE_CONSENSUS {
     script:
     """
     set -euo pipefail
-    echo "[MERGE_CONSENSUS] Concatenating SNVs and INDELs into unified output file..."
+
+    echo "[MERGE_CONSENSUS] Concatenating SNV and INDEL consensus VCFs..."
+
     bcftools concat -a \
-      ${snv_vcf} \
-      ${indel_vcf} \
-      -Oz \
-      -o final_consensus.vcf.gz
+        ${snv_vcf} \
+        ${indel_vcf} \
+        -Oz \
+        -o final_consensus.vcf.gz
+
     bcftools index -f -t final_consensus.vcf.gz
-    
-    echo -n "[MERGE_CONSENSUS] Workflow finished successfully! Total combined variants: "
+
+    echo -n "[MERGE_CONSENSUS] Final consensus count: "
     bcftools view -H final_consensus.vcf.gz | wc -l
     """
 }
 
-// ==============================================================================
-// PIPELINE WORKFLOW ENTRYPOINT
-// Evaluates variable configurations, constructs channels, and schedules jobs.
-// ==============================================================================
 workflow {
     log.info "========================================="
     log.info "       Somatic Consensus Pipeline        "
@@ -373,19 +478,17 @@ workflow {
     log.info "Reference FASTA   : ${params.ref_fasta}"
     log.info "-----------------------------------------"
 
-    // Group up arguments and filter out unassigned elements
     vcfs = [
         params.vcf1, params.vcf2, params.vcf3,
         params.vcf4, params.vcf5, params.vcf6, params.vcf7
     ].findAll { it }
-    
+
     if (vcfs.size() < 3) {
-        error "Fatal Pipeline Error: Need at least 3 VCFs for consensus filtering routines."
+        error "Fatal Pipeline Error: Need at least 3 VCFs for consensus."
     }
-    
-    log.info "[WORKFLOW] Detected ${vcfs.size()} input file paths for consolidation."
-    
-    // Transform file path assignments into (Caller_ID, File) target configurations
+
+    log.info "[WORKFLOW] Detected ${vcfs.size()} input VCFs."
+
     vcf_ch = Channel
         .fromList(vcfs)
         .map { vcf ->
@@ -394,31 +497,27 @@ workflow {
             log.info "[WORKFLOW] Queueing Caller ID -> [ ${caller_id} ]"
             tuple(caller_id, file(vcf))
         }
-        
-    log.info "[WORKFLOW] Phase 1: Checking indices..."
+
     indexed_ch = ENSURE_INDEX(vcf_ch)
-    
-    log.info "[WORKFLOW] Phase 2: Splitting caller profiles into distinct SNV and INDEL vectors..."
+
     split_ch = SPLIT_SNVS_INDELS(
         indexed_ch,
         file(params.ref_fasta),
         file(params.ref_fai)
     )
-    
-    // Consolidate output properties across downstream tasks
+
     snv_vcfs = split_ch.snvs.map { caller_id, vcf, tbi -> vcf }.collect()
     snv_tbis = split_ch.snvs.map { caller_id, vcf, tbi -> tbi }.collect()
-    
+
     indel_vcfs = split_ch.indels.map { caller_id, vcf, tbi -> vcf }.collect()
     indel_tbis = split_ch.indels.map { caller_id, vcf, tbi -> tbi }.collect()
-    
-    log.info "[WORKFLOW] Phase 3: Executing multi-caller matrix parsing routines..."
+
     snv_consensus = CONSENSUS_SNVS(snv_vcfs, snv_tbis)
     indel_consensus = CONSENSUS_INDELS(indel_vcfs, indel_tbis)
-    
-    log.info "[WORKFLOW] Phase 4: Merging final consensus files..."
+
     MERGE_CONSENSUS(snv_consensus.consensus, indel_consensus.consensus)
 }
+
 
 // nextflow.enable.dsl=2
 
