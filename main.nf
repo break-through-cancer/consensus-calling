@@ -512,7 +512,7 @@ workflow {
     indel_vcfs = split_ch.indels.map { caller_id, vcf, tbi -> vcf }.collect()
     indel_tbis = split_ch.indels.map { caller_id, vcf, tbi -> tbi }.collect()
 
-    snv_consensus = CONSENSUS_SNVS(snv_vcfs, snv_tbixfs)
+    snv_consensus = CONSENSUS_SNVS(snv_vcfs, snv_tbis)
     indel_consensus = CONSENSUS_INDELS(indel_vcfs, indel_tbis)
 
     MERGE_CONSENSUS(snv_consensus.consensus, indel_consensus.consensus)
