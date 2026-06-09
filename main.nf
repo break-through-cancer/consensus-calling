@@ -253,7 +253,7 @@ process CONSENSUS_SNVS {
 
             if (!(key in emitted)) {
                 emitted[key] = 1
-                print chrom, pos, id, ref, alt, qual, filter, info >> "consensus.body"
+                print chrom, pos, id, ref, alt, qual, filter, "." >> "consensus.body"
             }
         }
     }
@@ -416,7 +416,7 @@ process CONSENSUS_INDELS {
 
             if (!(key in emitted)) {
                 emitted[key] = 1
-                print chrom, pos, id, ref, alt, qual, filter, info >> "consensus.body"
+                print chrom, pos, id, ref, alt, qual, filter, "." >> "consensus.body"
             }
         }
     }
@@ -512,7 +512,7 @@ workflow {
     indel_vcfs = split_ch.indels.map { caller_id, vcf, tbi -> vcf }.collect()
     indel_tbis = split_ch.indels.map { caller_id, vcf, tbi -> tbi }.collect()
 
-    snv_consensus = CONSENSUS_SNVS(snv_vcfs, snv_tbis)
+    snv_consensus = CONSENSUS_SNVS(snv_vcfs, snv_tbixfs)
     indel_consensus = CONSENSUS_INDELS(indel_vcfs, indel_tbis)
 
     MERGE_CONSENSUS(snv_consensus.consensus, indel_consensus.consensus)
