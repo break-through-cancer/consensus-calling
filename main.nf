@@ -509,8 +509,17 @@ workflow {
     snv_vcfs = split_ch.snvs.map { caller_id, vcf, tbi -> vcf }.collect()
     snv_tbis = split_ch.snvs.map { caller_id, vcf, tbi -> tbi }.collect()
 
-    indel_vcfs = split_ch.indels.map { caller_id, vcf, tbi -> vcf }.collect()
-    indel_tbis = split_ch.indels.map { caller_id, vcf, tbi -> tbi }.collect()
+    mutect_strelka_indels = split_ch.indels.filter { caller_id, vcf, tbi ->
+    def id = caller_id.toLowerCase()
+    id.contains("mutect") || id.contains("strelka")
+    }
+
+    mutect_strelka_indels.view { caller_id, vcf, tbi ->
+        "[WORKFLOW] Keeping INDEL caller for consensus: ${caller_id}"
+    }
+
+    indel_vcfs = mutect_strelka_indels.map { caller_id, vcf, tbi -> vcf }.collect()
+    indel_tbis = mutect_strelka_indels.map { caller_id, vcf, tbi -> tbi }.collect()
 
     snv_consensus = CONSENSUS_SNVS(snv_vcfs, snv_tbis)
     indel_consensus = CONSENSUS_INDELS(indel_vcfs, indel_tbis)
