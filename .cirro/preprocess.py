@@ -94,8 +94,20 @@ def validate_groups(groups: dict) -> list:
 def main():
     ds = PreprocessDataset.from_running()
 
-    # Get all files available in the dataset
-    all_files = ds.files
+    print("[DEBUG] ds.files columns:", list(ds.files.columns))
+    print(ds.files.head().to_string())
+
+    # Pick the column that contains paths / filenames
+    file_col = None
+    for col in ["s3_path", "file", "path", "uri", "name", "filename"]:
+        if col in ds.files.columns:
+            file_col = col
+            break
+
+    if file_col is None:
+        raise ValueError(f"Could not find file path column in ds.files. Columns: {list(ds.files.columns)}")
+
+    all_files = ds.files[file_col].astype(str).tolist()
 
     print(f"[INFO] Total files in dataset: {len(all_files)}")
     print(f"[INFO] VCF files found: {sum(1 for f in all_files if f.endswith('.vcf.gz'))}")
