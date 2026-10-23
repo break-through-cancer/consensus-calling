@@ -6,6 +6,11 @@ params.ref_fasta       = params.ref_fasta       ?: null
 params.ref_fai         = params.ref_fai         ?: null
 params.snv_min_callers = params.snv_min_callers ?: null   // null = n_callers - 1
 params.indel_min_callers = params.indel_min_callers ?: 2
+params.n_callers       = params.n_callers       ?: 4      // callers expected per sample (from preprocess.py)
+params.indel_callers   = params.indel_callers   ?: 'mutect1,deepsomatic,strelka,varscan'   // callers counted for indels
+// Keep only PASS (and '.') records from each caller. DeepSomatic VCFs contain non-PASS records
+// (e.g. RefCall) that would otherwise be counted as caller support.
+params.pass_only       = params.containsKey('pass_only') ? params.pass_only : true
 
 
 // ── Helper: parse the JSON sample manifest emitted by preprocess.py ──────────
@@ -14,6 +19,30 @@ def parseSamples(json_str) {
 }
 
 
+// Strelka (nf-core/sarek) writes SNVs and indels as separate VCFs; join them so Strelka
+// looks like every other caller (one VCF per sample).
+process CONCAT_STRELKA {
+    tag "${sample_id}"
+    container 'quay.io/biocontainers/bcftools:1.20--h8b25389_0'
+
+    input:
+    tuple val(sample_id), path(snvs), path(indels)
+
+    output:
+    tuple val("${sample_id}__strelka"), path("${sample_id}.strelka.vcf.gz")
+
+    script:
+    """
+    set -euo pipefail
+    bcftools index -f -t ${snvs}
+    bcftools index -f -t ${indels}
+    bcftools concat -a ${snvs} ${indels} -Oz -o ${sample_id}.strelka.vcf.gz
+    """
+}
+
+
+// Normalise every caller's VCF to a sorted, bgzipped, indexed file. Handles plain .vcf
+// (e.g. MuTect1) as well as .vcf.gz inputs.
 process ENSURE_INDEX {
     tag "${caller_id}"
     container 'quay.io/biocontainers/bcftools:1.20--h8b25389_0'
@@ -22,12 +51,13 @@ process ENSURE_INDEX {
     tuple val(caller_id), path(vcf)
 
     output:
-    tuple val(caller_id), path(vcf), path("${vcf}.tbi")
+    tuple val(caller_id), path("${caller_id}.input.vcf.gz"), path("${caller_id}.input.vcf.gz.tbi")
 
     script:
     """
     set -euo pipefail
-    bcftools index -f -t ${vcf}
+    bcftools sort -Oz -o ${caller_id}.input.vcf.gz ${vcf}
+    bcftools index -f -t ${caller_id}.input.vcf.gz
     """
 }
 
@@ -46,28 +76,35 @@ process SPLIT_SNVS_INDELS {
     tuple val(caller_id), path("${caller_id}.indels.vcf.gz"), path("${caller_id}.indels.vcf.gz.tbi"), emit: indels
 
     script:
+    def pass_filter = params.pass_only.toString() == 'false' ? '' : '-f PASS,.'
     """
     set -euo pipefail
 
     echo "[SPLIT_SNVS_INDELS] Caller: ${caller_id}"
 
-    bcftools query -l ${vcf} > samples.txt
+    bcftools query -l ${vcf} > samples.txt || true
     grep -viE 'PBMC|NORMAL|BLOOD' samples.txt > tumor_samples.txt || true
 
-    if echo "${caller_id}" | grep -qi "strelka"; then
+    # Strelka and VarScan name their sample columns NORMAL/TUMOR; otherwise take the first
+    # non-normal sample. A VCF with no sample columns is used as is.
+    selected_sample=""
+    if grep -qx "TUMOR" samples.txt; then
         selected_sample="TUMOR"
-    else
+    elif [ -s samples.txt ]; then
         selected_sample=\$(head -n 1 tumor_samples.txt)
+        if [ -z "\$selected_sample" ]; then
+            echo "ERROR: Could not identify tumor sample for ${caller_id}" >&2
+            exit 1
+        fi
     fi
 
-    if [ -z "\$selected_sample" ]; then
-        echo "ERROR: Could not identify tumor sample for ${caller_id}" >&2
-        exit 1
+    echo "[SPLIT_SNVS_INDELS] Selected tumor sample: \${selected_sample:-<none: no sample columns>}"
+
+    if [ -n "\$selected_sample" ]; then
+        bcftools view ${pass_filter} -s "\$selected_sample" ${vcf} -Oz -o ${caller_id}.tumor_only.vcf.gz
+    else
+        bcftools view ${pass_filter} ${vcf} -Oz -o ${caller_id}.tumor_only.vcf.gz
     fi
-
-    echo "[SPLIT_SNVS_INDELS] Selected tumor sample: \$selected_sample"
-
-    bcftools view -s "\$selected_sample" ${vcf} -Oz -o ${caller_id}.tumor_only.vcf.gz
     bcftools index -f -t ${caller_id}.tumor_only.vcf.gz
 
     bcftools norm \
@@ -208,15 +245,9 @@ process CONSENSUS_INDELS {
 
     echo "[CONSENSUS_INDELS] Sample: ${sample_id}"
 
-    ls -1 *.indels.vcf.gz > indel_vcfs.list
-
-    # For indels: keep only Mutect2 and Strelka (Freebayes indels are noisy)
-    grep -iE 'mutect|strelka|merged' indel_vcfs.list > filtered_indel_vcfs.list || true
-
-    if [ ! -s filtered_indel_vcfs.list ]; then
-        echo "[WARN] No Mutect2/Strelka indel VCFs found, using all"
-        cp indel_vcfs.list filtered_indel_vcfs.list
-    fi
+    # The callers counted for indels are chosen in the workflow (params.indel_callers);
+    # use every indel VCF staged here.
+    ls -1 *.indels.vcf.gz > filtered_indel_vcfs.list
 
     n=\$(wc -l < filtered_indel_vcfs.list)
     min_callers=${params.indel_min_callers}
@@ -344,17 +375,29 @@ workflow {
     def sample_list = parseSamples(params.samples)
     log.info "Processing ${sample_list.size()} samples"
 
-    // Build channel: one entry per (sample_id, caller_id, vcf_path)
-    // caller_id is prefixed with sample_id to keep process tags unique
-    vcf_ch = Channel.fromList(
+    // Build channel: one entry per (caller_id, vcf_path), where caller_id is
+    // "<sample_id>__<caller>" to keep process tags and filenames unique.
+    // MuTect1, DeepSomatic and VarScan each provide a single VCF per sample.
+    single_vcf_ch = Channel.fromList(
         sample_list.collectMany { s ->
             [
-                [ "${s.sample_id}__mutect2",   file(s.vcf_mutect2)   ],
-                [ "${s.sample_id}__strelka",    file(s.vcf_strelka)   ],
-                [ "${s.sample_id}__freebayes",  file(s.vcf_freebayes) ],
+                [ "${s.sample_id}__mutect1",     file(s.vcf_mutect1)     ],
+                [ "${s.sample_id}__deepsomatic", file(s.vcf_deepsomatic) ],
+                [ "${s.sample_id}__varscan",     file(s.vcf_varscan)     ],
             ]
         }
     )
+
+    // Strelka provides separate SNV and indel VCFs, joined into one per sample
+    strelka_ch = CONCAT_STRELKA(
+        Channel.fromList(
+            sample_list.collect { s ->
+                tuple(s.sample_id, file(s.vcf_strelka_snvs), file(s.vcf_strelka_indels))
+            }
+        )
+    )
+
+    vcf_ch = single_vcf_ch.mix(strelka_ch)
 
     indexed_ch = ENSURE_INDEX(vcf_ch)
 
@@ -365,26 +408,28 @@ workflow {
     )
 
     // Extract sample_id from caller_id (everything before __)
-    // Then group all three SNV VCFs per sample
+    // Then group the SNV VCFs of all callers per sample
+    n_callers = params.n_callers as int
     snv_ch = split_ch.snvs
         .map { caller_id, vcf, tbi ->
             def sample_id = caller_id.split('__')[0]
             tuple(sample_id, vcf, tbi)
         }
-        .groupTuple(by: 0, size: 3)
+        .groupTuple(by: 0, size: n_callers)
         .map { sample_id, vcfs, tbis ->
             tuple(sample_id, vcfs, tbis)
         }
 
-    // For indels: keep only mutect2 and strelka per sample
+    // For indels: keep only the callers listed in params.indel_callers per sample
+    indel_callers = params.indel_callers.toString().tokenize(',').collect { it.trim() }
+    log.info "Indel callers: ${indel_callers.join(', ')}"
     indel_ch = split_ch.indels
+        .filter { caller_id, vcf, tbi ->
+            indel_callers.contains(caller_id.split('__')[1])
+        }
         .map { caller_id, vcf, tbi ->
             def sample_id = caller_id.split('__')[0]
             tuple(sample_id, vcf, tbi)
-        }
-        .filter { sample_id, vcf, tbi ->
-            def name = vcf.name.toLowerCase()
-            name.contains('mutect2') || name.contains('strelka') || name.contains('merged')
         }
         .groupTuple(by: 0)
         .map { sample_id, vcfs, tbis ->
