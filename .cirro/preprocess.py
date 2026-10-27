@@ -4,43 +4,49 @@ from cirro.helpers.preprocess_dataset import PreprocessDataset
 
 
 # ── Expected filenames ────────────────────────────────────────────────────────
-# Callers are identified by the caller name in the filename. Each caller
-# pipeline publishes its VCF under a caller-named file:
+# Callers are identified by the caller name in the filename:
 #
-#   MuTect1      <sample>.mutect1.pass.vcf               (plain, not bgzipped)
+#   MuTect       <sample>.mutect[1|2].<anything>.vcf[.gz]
 #   DeepSomatic  <sample>.deepsomatic.vcf.gz
 #   Strelka      <tumor>_vs_<normal>.strelka.somatic_snvs.vcf.gz
 #                <tumor>_vs_<normal>.strelka.somatic_indels.vcf.gz
 #                (nf-core/sarek writes SNVs and indels separately; both are needed)
-#   VarScan      <sample>.varscan.vcf[.gz]               (assumed; adjust if different)
 #
 # <sample> is the tumor sample ID; it is the key used to group the callers.
 # For Strelka it is everything before _vs_.
 
 # (caller, file kind) -> filename pattern. The first group is the sample ID.
-# "vcf" is a complete VCF for the caller; Strelka contributes two parts that the
-# workflow concatenates.
 FILE_PATTERNS = [
-    ("mutect1",     "vcf",    re.compile(r"^(.+)\.mutect1\.pass\.vcf$", re.IGNORECASE)),
+    ("mutect",      "vcf",    re.compile(r"^(.+?)\.mutect[12]?\..*vcf(\.gz)?$", re.IGNORECASE)),
     ("deepsomatic", "vcf",    re.compile(r"^(.+)\.deepsomatic\.vcf\.gz$", re.IGNORECASE)),
     ("strelka",     "snvs",   re.compile(r"^(.+?)_vs_.+\.strelka\.somatic_snvs\.vcf\.gz$", re.IGNORECASE)),
     ("strelka",     "indels", re.compile(r"^(.+?)_vs_.+\.strelka\.somatic_indels\.vcf\.gz$", re.IGNORECASE)),
-    ("varscan",     "vcf",    re.compile(r"^(.+)\.varscan\.vcf(\.gz)?$", re.IGNORECASE)),
 ]
 
-# Every sample must have all of these to be used.
-REQUIRED_CALLERS = ["mutect1", "deepsomatic", "strelka", "varscan"]
+# Callers that can be chosen in the UI, and the ones that only call SNVs.
+ALL_CALLERS = ["mutect", "deepsomatic", "strelka"]
+SNV_ONLY_CALLERS = ["mutect"]
 
 # Parts each caller must have.
 REQUIRED_KINDS = {
-    "mutect1":     {"vcf"},
+    "mutect":      {"vcf"},
     "deepsomatic": {"vcf"},
     "strelka":     {"snvs", "indels"},
-    "varscan":     {"vcf"},
 }
 
-# Callers whose indel calls count towards the indel consensus.
-INDEL_CALLERS = ["mutect1", "deepsomatic", "strelka", "varscan"]
+
+def as_bool(value, default=True):
+    """Cirro may hand booleans over as real bools or as 'true'/'false' strings."""
+    if value is None or value == "":
+        return default
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes", "on")
+    return bool(value)
+
+
+def selected_callers(params) -> list:
+    """Callers ticked in the UI (use_<caller> checkboxes), in canonical order."""
+    return [c for c in ALL_CALLERS if as_bool(params.get(f"use_{c}"))]
 
 
 def classify_file(filename: str):
@@ -76,55 +82,49 @@ def discover_sample_groups(all_files: list) -> dict:
     return groups
 
 
-def missing_for_sample(callers: dict) -> list:
-    """Return the list of missing '<caller>' / '<caller>:<kind>' items."""
-    missing = []
-    for caller in REQUIRED_CALLERS:
-        have = set(callers.get(caller, {}))
-        need = REQUIRED_KINDS[caller]
-        if not have:
-            missing.append(caller)
-        else:
-            missing.extend(f"{caller}:{kind}" for kind in sorted(need - have))
-    return missing
+def complete_callers(callers: dict, wanted: list) -> list:
+    """Wanted callers that have every part they need (Strelka needs both SNVs and indels)."""
+    return [c for c in wanted if REQUIRED_KINDS[c] <= set(callers.get(c, {}))]
 
 
-def validate_groups(groups: dict) -> list:
+def validate_groups(groups: dict, wanted: list) -> list:
     """
-    Keep samples that have every required caller (and every part of it).
-    Warn and skip incomplete samples rather than crashing.
-    Returns a list of sample dicts for the workflow.
+    Keep only samples where every selected caller is complete. Returns a list of
+    sample dicts for the workflow.
     """
+    keys = {
+        ("mutect", "vcf"): "vcf_mutect",
+        ("deepsomatic", "vcf"): "vcf_deepsomatic",
+        ("strelka", "snvs"): "vcf_strelka_snvs",
+        ("strelka", "indels"): "vcf_strelka_indels",
+    }
     valid = []
     for sample_id, callers in sorted(groups.items()):
-        missing = missing_for_sample(callers)
+        have = complete_callers(callers, wanted)
+        missing = [c for c in wanted if c not in have]
         if missing:
-            found = ", ".join(sorted(callers)) or "none"
-            print(
-                f"[WARN] Skipping sample '{sample_id}' — "
-                f"missing: {', '.join(missing)} (found callers: {found})"
-            )
+            print(f"[WARN] Skipping sample '{sample_id}' - missing/incomplete: {', '.join(missing)}")
             continue
-        valid.append({
-            "sample_id": sample_id,
-            "vcf_mutect1":         callers["mutect1"]["vcf"],
-            "vcf_deepsomatic":     callers["deepsomatic"]["vcf"],
-            "vcf_strelka_snvs":    callers["strelka"]["snvs"],
-            "vcf_strelka_indels":  callers["strelka"]["indels"],
-            "vcf_varscan":         callers["varscan"]["vcf"],
-        })
-        print(
-            f"[OK] Sample '{sample_id}' — "
-            + ", ".join(
-                f"{c}={'/'.join(p.split('/')[-1] for p in (callers[c][k] for k in sorted(callers[c])))}"
-                for c in REQUIRED_CALLERS
-            )
-        )
+        entry = {"sample_id": sample_id, "callers": have}
+        for c in have:
+            for kind, path in callers[c].items():
+                entry[keys[(c, kind)]] = path
+        valid.append(entry)
+        print(f"[OK] Sample '{sample_id}' - " + ", ".join(
+            f"{c}={'/'.join(callers[c][k].split('/')[-1] for k in sorted(callers[c]))}"
+            for c in have))
     return valid
 
 
 def main():
     ds = PreprocessDataset.from_running()
+
+    wanted = selected_callers(ds.params)
+    if not wanted:
+        raise ValueError("No callers selected; tick at least one of MuTect, DeepSomatic, Strelka")
+    indel_callers = [c for c in wanted if c not in SNV_ONLY_CALLERS]
+    print(f"[INFO] Callers selected: {', '.join(wanted)}")
+    print(f"[INFO] Indel callers: {', '.join(indel_callers) or '<none - SNV-only callers selected>'}")
 
     print("[DEBUG] ds.files columns:", list(ds.files.columns))
     print(ds.files.head().to_string())
@@ -148,23 +148,20 @@ def main():
     groups = discover_sample_groups(all_files)
     print(f"\n[INFO] Sample groups detected: {len(groups)}")
 
-    valid_samples = validate_groups(groups)
-    print(f"[INFO] Valid samples (all {len(REQUIRED_CALLERS)} callers present): {len(valid_samples)}")
+    valid_samples = validate_groups(groups, wanted)
+    print(f"[INFO] Samples to process: {len(valid_samples)}")
 
     if not valid_samples:
         raise ValueError(
-            "No valid sample groups found. Every sample needs: "
-            "<sample>.mutect1.pass.vcf, <sample>.deepsomatic.vcf.gz, "
-            "<tumor>_vs_<normal>.strelka.somatic_snvs.vcf.gz and .somatic_indels.vcf.gz, "
-            "and <sample>.varscan.vcf[.gz]"
+            f"No sample has every selected caller ({', '.join(wanted)}). Expected files such as: "
+            "<sample>.mutect*.vcf[.gz], <sample>.deepsomatic.vcf.gz, "
+            "and <tumor>_vs_<normal>.strelka.somatic_snvs.vcf.gz / .somatic_indels.vcf.gz"
         )
 
     # Emit to Nextflow params
     ds.add_param("samples", json.dumps(valid_samples))
     ds.add_param("n_samples", len(valid_samples))
-    ds.add_param("n_callers", len(REQUIRED_CALLERS))
-    ds.add_param("indel_callers", ",".join(INDEL_CALLERS))
-    ds.add_param("indel_min_callers", 2)
+    ds.add_param("callers", ",".join(wanted))
 
     print("\n[INFO] Sample manifest:")
     print(json.dumps(valid_samples, indent=2))
