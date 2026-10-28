@@ -7,7 +7,7 @@
         "title": "gatk docker",
         "description": " Docker image to use for Mutect2 tasks. This is only used for backends configured to use docker.",
         "type": "string",
-        "default":"broadinstitute/gatk:4.2.4.0"
+        "default": "broadinstitute/gatk:4.2.4.0"
       },
       "cpu": {
         "title": "cpu",
@@ -18,68 +18,29 @@
         "title": "mem",
         "description": "amount of memory you're running on",
         "type": "integer",
-        "default":8
+        "default": 8
       },
-      "vcf_1": {
-        "title": "vcf_1",
-        "description": "vcf for consensus",
-        "type": "string",
-        "multiple": false,
-        "pathType": "dataset",
-        "file": "**/*"
+      "use_mutect": {
+        "title": "MuTect",
+        "description": "Include MuTect calls (SNVs only; contributes to SNV consensus only)",
+        "type": "boolean",
+        "default": true
       },
-      "vcf_2": {
-        "title": "vcf_2",
-        "description": "vcf for consensus",
-        "type": "string",
-        "multiple": false,
-        "pathType": "dataset",
-        "file": "**/*"
+      "use_deepsomatic": {
+        "title": "DeepSomatic",
+        "description": "Include DeepSomatic calls (SNVs and indels)",
+        "type": "boolean",
+        "default": true
       },
-      "vcf_3": {
-        "title": "vcf_3",
-        "description": "vcf for consensus",
-        "type": "string",
-        "multiple": false,
-        "pathType": "dataset",
-        "file": "**/*"
-      },
-      "vcf_4": {
-        "title": "vcf_4",
-        "description": "vcf for consensus",
-        "type": "string",
-        "multiple": false,
-        "pathType": "dataset",
-        "file": "**/*"
-      },
-      "vcf_5": {
-        "title": "vcf_5",
-        "description": "vcf for consensus",
-        "type": "string",
-        "multiple": false,
-        "pathType": "dataset",
-        "file": "**/*"
-      },
-      "vcf_6": {
-        "title": "vcf_6",
-        "description": "vcf for consensus",
-        "type": "string",
-        "multiple": false,
-        "pathType": "dataset",
-        "file": "**/*"
-      },
-      "vcf_7": {
-        "title": "vcf_7",
-        "description": "vcf for consensus",
-        "type": "string",
-        "multiple": false,
-        "pathType": "dataset",
-        "file": "**/*"
+      "use_strelka": {
+        "title": "Strelka",
+        "description": "Include Strelka calls (SNVs and indels)",
+        "type": "boolean",
+        "default": true
       }
     },
     "required": [
-        "gatk_docker"
-
+      "gatk_docker"
     ]
   },
   "ui": {}
