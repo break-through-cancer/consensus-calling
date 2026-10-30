@@ -1,8 +1,8 @@
 import json
+import os
 import re
+import subprocess
 from cirro.helpers.preprocess_dataset import PreprocessDataset
-
-
 # ── Expected filenames ────────────────────────────────────────────────────────
 # Callers are identified by the caller name in the filename:
 #
@@ -33,6 +33,48 @@ REQUIRED_KINDS = {
     "deepsomatic": {"vcf"},
     "strelka":     {"snvs", "indels"},
 }
+
+# Set to False once input discovery is working, to keep logs short.
+DEBUG_INPUTS = True
+
+
+def _dump(title, text):
+    print(f"\n===== {title} =====\n{text}", flush=True)
+
+
+def _find_s3_paths(obj):
+    """Yield every s3:// string found anywhere in a nested dict/list."""
+    if isinstance(obj, str) and obj.startswith("s3://"):
+        yield obj
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            yield from _find_s3_paths(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _find_s3_paths(v)
+
+
+def debug_inputs(ds, max_lines=200):
+    """Print everything the preprocess step can see, to diagnose missing inputs."""
+    _dump("PARAMS", json.dumps(ds.params, indent=2, default=str))
+    _dump("METADATA", json.dumps(ds.metadata, indent=2, default=str))
+    samplesheet = getattr(ds, "samplesheet", None)
+    _dump("SAMPLESHEET", samplesheet.to_string() if samplesheet is not None else "None")
+    _dump("FILES", ds.files.to_string() if not ds.files.empty else "(empty)")
+    _dump("LOCAL WORKING DIR", "\n".join(sorted(os.listdir("."))))
+
+    for path in sorted(set(_find_s3_paths(ds.metadata))):
+        try:
+            result = subprocess.run(
+                ["aws", "s3", "ls", "--recursive", path],
+                capture_output=True, text=True,
+            )
+            lines = (result.stdout or result.stderr or "(empty)").splitlines()
+        except FileNotFoundError:
+            lines = ["aws CLI not available in this container"]
+        if len(lines) > max_lines:
+            lines = lines[:max_lines] + [f"... ({len(lines) - max_lines} more lines truncated)"]
+        _dump(f"S3 LISTING: {path}", "\n".join(lines))
 
 
 def as_bool(value, default=True):
@@ -126,8 +168,14 @@ def main():
     print(f"[INFO] Callers selected: {', '.join(wanted)}")
     print(f"[INFO] Indel callers: {', '.join(indel_callers) or '<none - SNV-only callers selected>'}")
 
-    print("[DEBUG] ds.files columns:", list(ds.files.columns))
-    print(ds.files.head().to_string())
+    if DEBUG_INPUTS:
+        debug_inputs(ds)
+
+    if ds.files.empty:
+        raise ValueError(
+            "No files found in the input dataset(s). Check which datasets were "
+            "selected when launching the run and whether their files are registered in Cirro."
+        )
 
     # Pick the column that contains paths / filenames
     file_col = None
