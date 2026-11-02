@@ -16,11 +16,18 @@ from cirro.helpers.preprocess_dataset import PreprocessDataset
 # For Strelka it is everything before _vs_.
 
 # (caller, file kind) -> filename pattern. The first group is the sample ID.
+# Patterns are matched against the full path, so they can use the folder name.
+# Real layouts seen in the input datasets:
+#   MuTect       <sample>/<sample>.mutectv1.final.vcf   (also .mutect1.pass.vcf, and the
+#                                                        raw .MuTect1.vcf which we ignore)
+#   DeepSomatic  <sample>/<sample>.vcf.gz               (no caller name in the file!)
+#   Strelka      variant_calling/strelka/<t>_vs_<n>/<t>_vs_<n>.strelka.somatic_{snvs,indels}.vcf.gz
 FILE_PATTERNS = [
-    ("mutect",      "vcf",    re.compile(r"^(.+?)\.mutect[12]?\..*vcf(\.gz)?$", re.IGNORECASE)),
-    ("deepsomatic", "vcf",    re.compile(r"^(.+)\.deepsomatic\.vcf\.gz$", re.IGNORECASE)),
-    ("strelka",     "snvs",   re.compile(r"^(.+?)_vs_.+\.strelka\.somatic_snvs\.vcf\.gz$", re.IGNORECASE)),
-    ("strelka",     "indels", re.compile(r"^(.+?)_vs_.+\.strelka\.somatic_indels\.vcf\.gz$", re.IGNORECASE)),
+    ("mutect",      "vcf",    re.compile(r"(?:^|/)([^/]+?)\.mutect(?:v?1|2)?\.(?:final|pass)\.vcf(?:\.gz)?$", re.IGNORECASE)),
+    # DeepSomatic: the VCF sits in a folder named after the sample, same stem as the file
+    ("deepsomatic", "vcf",    re.compile(r"(?:^|/)([^/]+)/\1\.vcf\.gz$")),
+    ("strelka",     "snvs",   re.compile(r"(?:^|/)([^/]+?)_vs_[^/]+\.strelka\.somatic_snvs\.vcf\.gz$", re.IGNORECASE)),
+    ("strelka",     "indels", re.compile(r"(?:^|/)([^/]+?)_vs_[^/]+\.strelka\.somatic_indels\.vcf\.gz$", re.IGNORECASE)),
 ]
 
 # Callers that can be chosen in the UI, and the ones that only call SNVs.
@@ -96,12 +103,16 @@ def classify_file(filename: str):
     Return (sample_id, caller, kind) if the filename matches a known caller
     pattern, otherwise (None, None, None).
     """
-    basename = filename.split("/")[-1]
     for caller, kind, pattern in FILE_PATTERNS:
-        m = pattern.match(basename)
+        m = pattern.search(filename)
         if m:
             return m.group(1), caller, kind
     return None, None, None
+
+
+def _rank(path: str) -> int:
+    """Lower is better when a caller has several candidate files (MuTect: final > pass)."""
+    return 0 if ".final." in path.lower() else 1
 
 
 def discover_sample_groups(all_files: list) -> dict:
@@ -115,10 +126,12 @@ def discover_sample_groups(all_files: list) -> dict:
             continue
         parts = groups.setdefault(sample_id, {}).setdefault(caller, {})
         if kind in parts:
+            keep, drop = (f, parts[kind]) if _rank(f) < _rank(parts[kind]) else (parts[kind], f)
             print(
                 f"[WARN] Duplicate {caller} {kind} file for sample {sample_id} — "
-                f"keeping first, ignoring {f}"
+                f"keeping {keep}, ignoring {drop}"
             )
+            parts[kind] = keep
         else:
             parts[kind] = f
     return groups
